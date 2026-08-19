@@ -4,6 +4,7 @@
 package state
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -228,4 +229,79 @@ func Dir() (string, error) {
 		base = filepath.Join(home, ".local", "state")
 	}
 	return filepath.Join(base, "trig", "workspaces"), nil
+}
+
+// idAlphabet leaves out vowels and the digits that read as letters, so a slug
+// never spells a word and never has to be read aloud twice.
+const idAlphabet = "bcdfghjklmnpqrstvwxz23456789"
+
+const idLen = 4
+
+// NewNodeID draws a short slug that no node on this map is already using. Ids
+// are immutable and end up inside the tmux session name, so they keep to
+// characters tmux gives no meaning to.
+func (ws Workspace) NewNodeID() string {
+	taken := make(map[string]bool, len(ws.Nodes))
+	for _, n := range ws.Nodes {
+		taken[n.ID] = true
+	}
+	for {
+		if id := newID(); !taken[id] {
+			return id
+		}
+	}
+}
+
+func newID() string {
+	buf := make([]byte, idLen)
+	if _, err := rand.Read(buf); err != nil {
+		// crypto/rand does not fail on any supported platform; if it ever does,
+		// carrying on with predictable ids would be worse than stopping.
+		panic("trig: no randomness available for node ids: " + err.Error())
+	}
+	for i, b := range buf {
+		buf[i] = idAlphabet[int(b)%len(idAlphabet)]
+	}
+	return string(buf)
+}
+
+// NearestFreeCell finds the closest cell to from that no node occupies,
+// searching outward ring by ring. One node per cell is the map's only layout
+// rule, so this is what "place it near the cursor" means.
+func (ws Workspace) NearestFreeCell(from Cell) Cell {
+	occupied := make(map[Cell]bool, len(ws.Nodes))
+	for _, n := range ws.Nodes {
+		occupied[n.Pos] = true
+	}
+	for radius := 0; ; radius++ {
+		for _, c := range ring(from, radius) {
+			if !occupied[c] {
+				return c
+			}
+		}
+	}
+}
+
+// ring lists the cells exactly radius steps from centre, in a fixed order so
+// that the same map and the same cursor always place a node in the same cell.
+func ring(centre Cell, radius int) []Cell {
+	if radius == 0 {
+		return []Cell{centre}
+	}
+	var cells []Cell
+	for col := centre.Col - radius; col <= centre.Col+radius; col++ {
+		for row := centre.Row - radius; row <= centre.Row+radius; row++ {
+			if abs(col-centre.Col) == radius || abs(row-centre.Row) == radius {
+				cells = append(cells, Cell{Col: col, Row: row})
+			}
+		}
+	}
+	return cells
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }

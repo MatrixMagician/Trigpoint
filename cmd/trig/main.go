@@ -13,6 +13,7 @@ import (
 	"github.com/MatrixMagician/Trigpoint/internal/config"
 	"github.com/MatrixMagician/Trigpoint/internal/doctor"
 	"github.com/MatrixMagician/Trigpoint/internal/state"
+	"github.com/MatrixMagician/Trigpoint/internal/tmux"
 	"github.com/MatrixMagician/Trigpoint/internal/tui"
 )
 
@@ -81,7 +82,7 @@ func runTUI(args []string) error {
 		return err
 	}
 
-	_, err = tea.NewProgram(tui.New(cfg, ws), tea.WithAltScreen()).Run()
+	_, err = tea.NewProgram(tui.New(cfg, ws, stateDir, tmux.CLI{}), tea.WithAltScreen()).Run()
 	return err
 }
 
