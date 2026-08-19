@@ -69,6 +69,11 @@ type Node struct {
 	Note      string    `json:"note,omitempty"`
 	Pinned    bool      `json:"pinned,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+	// Session is the name of a session Trigpoint did not create, adopted onto
+	// the map (§9.3). Empty for every node whose session Trigpoint named itself,
+	// which is what tells the two apart — see
+	// docs/adr/0007-an-adopted-node-stores-its-session-name.md.
+	Session string `json:"session,omitempty"`
 }
 
 // HasSession reports whether a node has a tmux session behind it at all. Notes
@@ -76,6 +81,12 @@ type Node struct {
 // path asks: the session layer stays nil-tolerant, and a future kind with no
 // session of its own costs nothing to add.
 func (n Node) HasSession() bool { return n.Kind != KindNote }
+
+// Adopted reports whether the session behind a node is one Trigpoint found
+// rather than one it made. It is asked of the stored name and not of the
+// `adopted` tag: tags are the user's to edit, and what a foreign session may be
+// done to is not.
+func (n Node) Adopted() bool { return n.Session != "" }
 
 // Group is a named rectangular region of the map. Membership is containment and
 // nothing else — there is deliberately no member list to disagree with the picture.

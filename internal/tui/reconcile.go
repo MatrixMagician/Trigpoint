@@ -46,11 +46,16 @@ func (m Model) reconcile() tea.Cmd {
 	owned := make(map[string]bool, len(m.ws.Nodes)+len(m.pending))
 	placed := make(map[string]string, len(m.ws.Nodes))
 	for _, n := range m.pending {
-		owned[tmux.SessionName(m.ws.Name, n.ID)] = true
+		owned[m.sessionOf(n)] = true
 	}
 	for _, n := range m.ws.Nodes {
 		if n.HasSession() {
-			session := tmux.SessionName(m.ws.Name, n.ID)
+			// The node's own session name, which for an adopted node is the
+			// foreign one it stores rather than one derived from its id (§9.3).
+			// That is the whole of what reconciliation has to know about
+			// adoption: a foreign session with a node is placed, and one without
+			// is a stranger the orphan pass below already leaves alone.
+			session := m.sessionOf(n)
 			owned[session], placed[session] = true, n.ID
 		}
 	}
