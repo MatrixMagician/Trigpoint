@@ -8,14 +8,14 @@ and the attachment. Quitting Trigpoint kills nothing — every session outlives 
 
 ## Status
 
-Early. The map, its cursor, shell nodes, note cards, the attach handoff, and live previews
-work; the rest of the spec does not exist yet.
+Early. The map, its cursor, shell nodes, note cards, the attach handoff, live previews, and
+adopting sessions you already had work; the rest of the spec does not exist yet.
 
 | Milestone | | |
 | --- | --- | --- |
 | M0 | Skeleton — config, workspace store, `trig doctor` | done |
 | M1 | Nodes on a map — create/kill shell nodes, cursor and node movement, attach handoff | in progress (rename still to come) |
-| M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | in progress (previews, reconciliation done) |
+| M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | in progress (previews, reconciliation, adoption done) |
 | M3 | Organisation — colours, tags, sizes, groups, filter, palette | to do |
 | M4 | Agents — agent nodes, status badges, attention jump | to do |
 | M5 | Polish and release | to do |
@@ -76,6 +76,7 @@ What is bound today:
 | `Enter` | Attach to the node under the cursor — the whole terminal, handed over. On a dead node, offer to respawn it. On a note, edit its body in `$EDITOR` |
 | `n` | New shell node at the nearest free cell to the cursor |
 | `N` | New note — a rendered markdown card with no session behind it |
+| `A` | Adopt a tmux session Trigpoint did not create — `j`/`k` to choose, `Enter` to adopt |
 | `x` | Kill the node under the cursor and its session (asks first; a note or a dead node is just removed) |
 | `q` / `Ctrl-C` | Quit — sessions keep running |
 
@@ -122,8 +123,7 @@ A session under the `trig_` prefix with no node behind it is reconstructed as a 
 the `TRIG_WORKSPACE` / `TRIG_NODE_ID` / `TRIG_NODE_KIND` that every session Trigpoint starts
 carries in its own environment. That is what gets your map back after a lost or corrupted
 state file. Sessions belonging to another workspace are left to the map that owns them, and
-sessions outside the prefix are left alone entirely — adopting those is `A`, which is not
-built yet.
+sessions outside the prefix are left alone entirely until you adopt one with `A`.
 
 Liveness is worked out from tmux every time and never written to disk: a stored flag would be
 stale from the moment the machine rebooted, which is exactly when the map is most relied on.
@@ -133,6 +133,31 @@ See [ADR 0006](docs/adr/0006-liveness-is-derived-not-stored.md).
 
 Notes are excluded from all of it. A note has no session, so it is never alive, never dead,
 and carries no badge.
+
+## Adopting a session you already had
+
+Trigpoint is useful on day one against a tmux zoo you have been running for months. `A` lists
+the sessions on the server that Trigpoint did not create and that are not already on this map;
+`j` and `k` choose among them and `Enter` adopts one, which puts a shell node on the map at the
+nearest free cell, tagged `adopted`, titled after the session.
+
+Adoption creates nothing and renames nothing. The session was already running, the card simply
+appears over it, and the name stays the one its owner gave it — so `tmux attach -t work` still
+finds it and anything scripted around the name still works. Trigpoint stores that name on the
+node instead of imposing its own prefix, which is what lets an adopted card do everything any
+other shell node does: `Enter` attaches to it, its card previews it, reconciliation matches it
+by the stored name, and `x` kills the foreign session after the usual confirmation.
+
+Sessions whose names contain `.` or `:` are not offered. tmux accepts both and then reads them
+back as its own window and pane separators, so it cannot be asked about such a session by name
+at all — which is also why a workspace name may not contain them.
+
+Two things differ, both because Trigpoint did not start the session. `Enter` on an adopted node
+whose session has gone says so rather than offering a respawn — there is no command to re-run
+and no name Trigpoint may create — so `x` removes the card. And its preview refreshes on the
+slow tick rather than the moment output lands, because the activity subscription reports
+sessions under the `trig_` prefix only. See
+[ADR 0007](docs/adr/0007-an-adopted-node-stores-its-session-name.md).
 
 ## Live previews
 

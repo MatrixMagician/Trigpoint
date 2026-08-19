@@ -30,6 +30,7 @@ const (
 	modeConfirmKill
 	modeConfirmRespawn
 	modeConfirmQuit
+	modeAdopt
 )
 
 // Model is the map view's state. The workspace it renders is owned here; the
@@ -49,6 +50,8 @@ type Model struct {
 	respawning    string       // the dead node Enter was pressed on, held until y or n
 	creating      state.Kind   // the kind the title prompt is collecting a name for
 	count         string       // the count prefix typed so far, applied to the next motion
+	candidates    []string     // the sessions the adoption picker is offering
+	choice        int          // which of them is under the picker's own cursor
 	awaitZ        bool         // the first z of zz has been pressed
 	handingOff    bool         // the terminal is out at a session or an editor, so Enter is spoken for
 
@@ -122,6 +125,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateConfirmRespawn(msg)
 		case modeConfirmQuit:
 			return m.updateConfirmQuit(msg)
+		case modeAdopt:
+			return m.updateAdopt(msg)
 		}
 		return m.updateNormal(msg)
 	}
@@ -167,6 +172,11 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode, m.input, m.creating = modeTitle, "", state.KindShell
 	case "N":
 		m.mode, m.input, m.creating = modeTitle, "", state.KindNote
+	case "A":
+		// The picker opens on tmux's answer rather than on the keystroke: the
+		// question is a subprocess, and a map that froze on it would freeze on
+		// the one thing adoption is for — a server with a great many sessions.
+		return m, m.adoptable()
 	case "x":
 		// The target is fixed here rather than read again at y, because a
 		// create landing while the prompt is up moves the cursor onto the new
@@ -216,6 +226,9 @@ func (m Model) statusBar() string {
 		return m.bar(statusStyle, "Quit Trigpoint? Sessions keep running. (y/n)")
 	case m.mode == modeTitle:
 		return m.bar(statusStyle, titleLabel(m.creating)+": "+flatten(m.input)+"▏")
+	case m.mode == modeAdopt:
+		return m.bar(statusStyle, fmt.Sprintf("Adopt %s (%d of %d) · j/k choose · ⏎ adopt · esc cancel",
+			flatten(m.candidates[m.choice]), m.choice+1, len(m.candidates)))
 	case m.mode == modeConfirmRespawn:
 		node, _ := m.node(m.respawning)
 		return m.bar(statusStyle, fmt.Sprintf("Respawn %s? (y/n)", flatten(node.Title)))
@@ -233,7 +246,7 @@ func (m Model) statusBar() string {
 	}
 
 	left := fmt.Sprintf("%s · %s", m.ws.Name, pluralise(len(m.ws.Nodes), "node"))
-	right := "⏎ attach · n new · N note · x kill · q quit"
+	right := "⏎ attach · n new · N note · A adopt · x kill · q quit"
 	if m.count != "" {
 		right = m.count + " · " + right
 	}

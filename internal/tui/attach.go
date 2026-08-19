@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/MatrixMagician/Trigpoint/internal/state"
-	"github.com/MatrixMagician/Trigpoint/internal/tmux"
 )
 
 // attachedMsg says the terminal is Trigpoint's again, carrying whatever went
@@ -25,7 +24,7 @@ func (m Model) attach() (tea.Model, tea.Cmd) {
 	if !ok || m.handingOff {
 		return m, nil
 	}
-	session := tmux.SessionName(m.ws.Name, node.ID)
+	session := m.sessionOf(node)
 
 	// tmux is asked here rather than trusted from the last render: a session
 	// that died in between would otherwise be handed a terminal it cannot use,
@@ -39,7 +38,16 @@ func (m Model) attach() (tea.Model, tea.Cmd) {
 		// Nothing to hand the terminal to, so Enter means the other thing it
 		// can mean on a node: offer to start it again (§9.2). The card is
 		// corrected here too — the map believed this node alive until now.
-		return m.markDead(node.ID).confirmRespawn(node), nil
+		m = m.markDead(node.ID)
+		if node.Adopted() {
+			// Except on an adopted node, where there is no command to re-run and
+			// no session name to re-run it under: Trigpoint did not start this
+			// session and knows nothing about what was in it (§9.3). The card
+			// stays, dead, until x removes it.
+			m.status = "The session " + flatten(node.Session) + " has gone, and Trigpoint did not start it — there is nothing to respawn."
+			return m, nil
+		}
+		return m.confirmRespawn(node), nil
 	}
 
 	// Both tmux calls happen on the keystroke rather than in a command: the

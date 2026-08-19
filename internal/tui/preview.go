@@ -96,7 +96,7 @@ func (m Model) onEvent(ev tmux.Event) (Model, tea.Cmd) {
 		return next, tea.Batch(cmd, m.reconcile())
 	}
 	for _, n := range m.visibleNodes() {
-		if n.HasSession() && tmux.SessionName(m.ws.Name, n.ID) == ev.Session {
+		if n.HasSession() && m.sessionOf(n) == ev.Session {
 			return m.markDirty(n.ID)
 		}
 	}
@@ -149,7 +149,7 @@ func (m Model) capture() (Model, tea.Cmd) {
 			continue
 		}
 		if lines := m.previewHeight(n); lines > 0 {
-			wants = append(wants, want{n.ID, tmux.SessionName(m.ws.Name, n.ID), lines})
+			wants = append(wants, want{n.ID, m.sessionOf(n), lines})
 		}
 	}
 	m.dirty = nil

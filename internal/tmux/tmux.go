@@ -1,7 +1,10 @@
 // Package tmux is Trigpoint's claim over the sessions behind its nodes. The
 // claim is a naming convention and nothing stronger: every session this package
-// creates is named under Prefix, and every session it modifies must already be.
-// A session outside the prefix belongs to someone else and is never touched.
+// creates is named under Prefix, and a name outside it is refused rather than
+// invented. Reading a session — attaching, capturing — is never gated on the
+// prefix, and neither is killing one: adoption (§9.3) puts foreign sessions on
+// the map, and what a card on the map may be told to do is the same whoever
+// started the session behind it.
 package tmux
 
 import (
@@ -138,15 +141,17 @@ func (c CLI) Env(session string) (map[string]string, error) {
 
 // Kill removes a session. Closing Trigpoint kills nothing; only this does.
 //
+// No prefix check. An adopted node's session is one Trigpoint never created
+// (§9.3), and killing it is the whole of what the user confirmed at the prompt —
+// a card left on the map with a session behind it that refuses to die would be
+// worse than no card at all.
+//
 // A session can die without Trigpoint — a reboot, a `tmux kill-server`, or
 // `exit` typed inside it — so killing one that is already gone is the outcome
 // that was asked for rather than a failure. That is decided from what
 // kill-session itself reports rather than by asking first, because a session
 // that dies between the asking and the killing would slip through the gap.
 func (c CLI) Kill(session string) error {
-	if err := mustBeOurs(session, "kill"); err != nil {
-		return err
-	}
 	err := c.run("kill-session", "-t", "="+session)
 	if err != nil && alreadyGone(err) {
 		return nil

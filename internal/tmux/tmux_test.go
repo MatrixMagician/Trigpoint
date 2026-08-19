@@ -109,22 +109,25 @@ func TestKillRemovesTheSession(t *testing.T) {
 	}
 }
 
-func TestKillNeverTouchesASessionOutsideThePrefix(t *testing.T) {
+func TestKillRemovesAnAdoptedSessionToo(t *testing.T) {
 	c := testCLI(t)
+	// A session outside the prefix, of the kind adoption exists to map (§9.3).
+	// Killing it is an instruction about a card on the map, given at a
+	// confirmation prompt — so the prefix has nothing left to say here.
 	const foreign = "someone-elses-work"
 	if err := exec.Command("tmux", "-L", c.Socket, "new-session", "-d", "-s", foreign).Run(); err != nil {
 		t.Fatalf("setting up a foreign session: %v", err)
 	}
 
-	if err := c.Kill(foreign); err == nil {
-		t.Error("Kill should refuse a session outside the Trigpoint prefix")
+	if err := c.Kill(foreign); err != nil {
+		t.Fatalf("Kill of an adopted session: %v", err)
 	}
 	alive, err := c.Exists(foreign)
 	if err != nil {
 		t.Fatalf("Exists: %v", err)
 	}
-	if !alive {
-		t.Fatal("the foreign session was killed")
+	if alive {
+		t.Error("killing an adopted node should kill the session it was adopted from")
 	}
 }
 

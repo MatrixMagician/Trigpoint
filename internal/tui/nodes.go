@@ -173,9 +173,12 @@ func (m Model) updateConfirmKill(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.ws.Nodes = without(m.ws.Nodes, id)
 			return m.forget(id).save(), nil
 		}
-		sessions, workspace := m.sessions, m.ws.Name
+		// An adopted node kills the foreign session it was adopted from: the
+		// card is over a real session, and the confirmation it took to get here
+		// is the same one every other node's kill takes (§9.3).
+		sessions, session := m.sessions, m.sessionOf(node)
 		return m, func() tea.Msg {
-			err := sessions.Kill(tmux.SessionName(workspace, id))
+			err := sessions.Kill(session)
 			return nodeKilledMsg{id: id, err: err}
 		}
 	case "n", "N", "esc", "q":
@@ -243,6 +246,9 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		next, cmd := m.alive(msg.id).markDirty(msg.id)
 		return next, cmd, true
+
+	case adoptableMsg:
+		return m.openAdoption(msg), nil, true
 
 	case nodeKilledMsg:
 		if msg.err != nil {
