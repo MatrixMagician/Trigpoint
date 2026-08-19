@@ -28,6 +28,7 @@ const (
 	modeNormal mode = iota
 	modeTitle
 	modeConfirmKill
+	modeConfirmRespawn
 	modeConfirmQuit
 )
 
@@ -45,10 +46,20 @@ type Model struct {
 	status        string       // the last failure, shown until the next action
 	pending       []state.Node // nodes whose sessions tmux has not confirmed yet
 	killing       string       // the node x was pressed on, held until y or n
+	respawning    string       // the dead node Enter was pressed on, held until y or n
 	creating      state.Kind   // the kind the title prompt is collecting a name for
 	count         string       // the count prefix typed so far, applied to the next motion
 	awaitZ        bool         // the first z of zz has been pressed
 	handingOff    bool         // the terminal is out at a session or an editor, so Enter is spoken for
+
+	// dead is the nodes tmux has no session for (§9.2). It is derived on every
+	// reconciliation pass and never written to disk — see
+	// docs/adr/0006-liveness-is-derived-not-stored.md.
+	dead map[string]bool
+	// corrections counts what the map has learned about liveness on its own,
+	// between reconciliation passes. A pass carries the count it was sent with,
+	// so an answer that predates a correction is dropped rather than applied.
+	corrections int
 
 	previews map[string][]string // the last snapshot taken of each node, by id
 	dirty    map[string]bool     // the cards whose snapshot has been overtaken
@@ -72,7 +83,10 @@ func New(cfg config.Config, ws state.Workspace, stateDir string, sessions Sessio
 // with, and nothing to cancel it for: quitting Trigpoint closes stdin on the
 // control client, which is how tmux is told the client is gone.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(listen(m.sessions.Watch(context.Background())), m.slowTick())
+	// Reconciliation is third because the map opens on what the last session
+	// left behind, and a card claiming a session that did not survive the
+	// reboot is the one lie a map like this must not tell (§9.2).
+	return tea.Batch(listen(m.sessions.Watch(context.Background())), m.slowTick(), m.reconcile())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -104,6 +118,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateTitle(msg)
 		case modeConfirmKill:
 			return m.updateConfirmKill(msg)
+		case modeConfirmRespawn:
+			return m.updateConfirmRespawn(msg)
 		case modeConfirmQuit:
 			return m.updateConfirmQuit(msg)
 		}
@@ -200,11 +216,15 @@ func (m Model) statusBar() string {
 		return m.bar(statusStyle, "Quit Trigpoint? Sessions keep running. (y/n)")
 	case m.mode == modeTitle:
 		return m.bar(statusStyle, titleLabel(m.creating)+": "+flatten(m.input)+"▏")
+	case m.mode == modeConfirmRespawn:
+		node, _ := m.node(m.respawning)
+		return m.bar(statusStyle, fmt.Sprintf("Respawn %s? (y/n)", flatten(node.Title)))
 	case m.mode == modeConfirmKill:
 		node, _ := m.node(m.killing)
-		if !node.HasSession() {
-			// There is no session behind a note, so offering to kill one would
-			// be asking the user to confirm something that cannot happen.
+		if !node.HasSession() || m.dead[m.killing] {
+			// There is no session behind a note, and a dead node's is already
+			// gone, so offering to kill one would be asking the user to
+			// confirm something that cannot happen.
 			return m.bar(statusStyle, fmt.Sprintf("Remove %s? (y/n)", flatten(node.Title)))
 		}
 		return m.bar(statusStyle, fmt.Sprintf("Kill %s and its session? (y/n)", flatten(node.Title)))

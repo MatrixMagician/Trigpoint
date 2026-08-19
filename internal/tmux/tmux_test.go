@@ -3,6 +3,7 @@ package tmux
 import (
 	"fmt"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -63,7 +64,7 @@ func TestCreateMakesALiveSessionCarryingItsProvenance(t *testing.T) {
 	dir := t.TempDir()
 	name := SessionName("main", "k4f2")
 
-	if err := c.Create(name, dir, map[string]string{
+	if err := c.Create(name, dir, "", map[string]string{
 		"TRIG_WORKSPACE": "main",
 		"TRIG_NODE_ID":   "k4f2",
 		"TRIG_NODE_KIND": "shell",
@@ -93,7 +94,7 @@ func TestCreateMakesALiveSessionCarryingItsProvenance(t *testing.T) {
 func TestKillRemovesTheSession(t *testing.T) {
 	c := testCLI(t)
 	name := SessionName("main", "k4f2")
-	if err := c.Create(name, t.TempDir(), nil); err != nil {
+	if err := c.Create(name, t.TempDir(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if err := c.Kill(name); err != nil {
@@ -128,7 +129,7 @@ func TestKillNeverTouchesASessionOutsideThePrefix(t *testing.T) {
 }
 
 func TestCreateRefusesASessionOutsideThePrefix(t *testing.T) {
-	if err := (CLI{Socket: "trig-test-unused"}).Create("scratch", t.TempDir(), nil); err == nil {
+	if err := (CLI{Socket: "trig-test-unused"}).Create("scratch", t.TempDir(), "", nil); err == nil {
 		t.Error("Create should refuse a name outside the Trigpoint prefix")
 	}
 }
@@ -160,7 +161,7 @@ func TestKillingAnAbsentSessionSucceeds(t *testing.T) {
 func TestHandoffInstallsTheDetachBindingAndTakesItBackAgain(t *testing.T) {
 	c := testCLI(t)
 	name := SessionName("main", "k4f2")
-	if err := c.Create(name, t.TempDir(), nil); err != nil {
+	if err := c.Create(name, t.TempDir(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -200,7 +201,7 @@ func rootBindings(t *testing.T, c CLI) string {
 func TestHandoffAttachDropsTMUXSoNestingIsNeverRefused(t *testing.T) {
 	c := testCLI(t)
 	name := SessionName("main", "k4f2")
-	if err := c.Create(name, t.TempDir(), nil); err != nil {
+	if err := c.Create(name, t.TempDir(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,42,0")
@@ -233,7 +234,7 @@ func TestHandoffRefusesWithNoDetachKey(t *testing.T) {
 func TestTheDetachKeyReturnsFromANestedAttach(t *testing.T) {
 	c := testCLI(t)
 	node := SessionName("main", "k4f2")
-	if err := c.Create(node, t.TempDir(), nil); err != nil {
+	if err := c.Create(node, t.TempDir(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if err := exec.Command("tmux", "-L", c.Socket, "new-session", "-d", "-s", "outer").Run(); err != nil {
@@ -295,7 +296,7 @@ func TestReleasingTheDetachBindingSurvivesTheServerGoingAway(t *testing.T) {
 	// on the map the user has just come back to.
 	c := testCLI(t)
 	name := SessionName("main", "k4f2")
-	if err := c.Create(name, t.TempDir(), nil); err != nil {
+	if err := c.Create(name, t.TempDir(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	_, release, err := c.Handoff(name, "M-Escape")
@@ -307,5 +308,128 @@ func TestReleasingTheDetachBindingSurvivesTheServerGoingAway(t *testing.T) {
 	}
 	if err := release(); err != nil {
 		t.Errorf("release complained about a server that is already gone: %v", err)
+	}
+}
+
+func TestListNamesEverySessionOnTheServer(t *testing.T) {
+	c := testCLI(t)
+	ours := SessionName("main", "k4f2")
+	if err := c.Create(ours, t.TempDir(), "", nil); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	const foreign = "someone-elses-work"
+	if err := exec.Command("tmux", "-L", c.Socket, "new-session", "-d", "-s", foreign).Run(); err != nil {
+		t.Fatalf("setting up a foreign session: %v", err)
+	}
+
+	// Reconciliation has to see the whole server, not only Trigpoint's corner
+	// of it: an orphan is recognised by its name, and adoption (§9.3) wants
+	// exactly the sessions this prefix excludes.
+	names, err := c.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, want := range []string{ours, foreign} {
+		if !slices.Contains(names, want) {
+			t.Errorf("List() = %v, missing %q", names, want)
+		}
+	}
+}
+
+func TestListIsEmptyWithNoServerRunning(t *testing.T) {
+	// No server is an answer — an empty map — rather than a failure.
+	names, err := (CLI{Socket: "trig-test-no-server-to-list"}).List()
+	if err != nil {
+		t.Fatalf("List with no server should not be an error: %v", err)
+	}
+	if len(names) != 0 {
+		t.Errorf("List() = %v, want nothing at all", names)
+	}
+}
+
+func TestEnvReadsBackTheProvenanceCreateSeeded(t *testing.T) {
+	c := testCLI(t)
+	name := SessionName("main", "k4f2")
+	if err := c.Create(name, t.TempDir(), "", map[string]string{
+		"TRIG_WORKSPACE": "main",
+		"TRIG_NODE_ID":   "k4f2",
+		"TRIG_NODE_KIND": "shell",
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// This is what makes a session self-describing: a workspace file lost to a
+	// crash leaves the session still able to say which node it was.
+	env, err := c.Env(name)
+	if err != nil {
+		t.Fatalf("Env: %v", err)
+	}
+	for key, want := range map[string]string{
+		"TRIG_WORKSPACE": "main",
+		"TRIG_NODE_ID":   "k4f2",
+		"TRIG_NODE_KIND": "shell",
+	} {
+		if env[key] != want {
+			t.Errorf("Env()[%q] = %q, want %q", key, env[key], want)
+		}
+	}
+}
+
+func TestEnvOfAnAbsentSessionIsAFailureRatherThanAnEmptyAnswer(t *testing.T) {
+	c := testCLI(t)
+	// A session can die between being listed and being asked about. Answering
+	// that with an empty environment would be indistinguishable from a session
+	// that is there and has had its variables cleared — and the caller does
+	// opposite things with the two.
+	if _, err := c.Env(SessionName("main", "gone")); err == nil {
+		t.Error("Env of a session that is not there should say so")
+	}
+}
+
+func TestListReportsAFailureRatherThanCallingItAnEmptyServer(t *testing.T) {
+	// "No server running" is an empty answer; anything else tmux refuses for is
+	// a failure. Reading one as the other would tell reconciliation that
+	// nothing is alive and mark every node on the map dead — the one lie the
+	// map exists not to tell.
+	//
+	// The NUL makes the command unrunnable, which stands for every way tmux
+	// can fail with sessions still on the server: a protocol mismatch after an
+	// upgrade under a live server, or a socket that cannot be read.
+	if _, err := (CLI{Socket: "trig-test-\x00-broken"}).List(); err == nil {
+		t.Error("a tmux that failed for any other reason should be reported, not read as no sessions")
+	}
+}
+
+func TestAbsentRecognisesTheWordingsForSomethingThatIsNotThere(t *testing.T) {
+	// The wording differs between tmux versions, and a miss here is what turns
+	// a live map dead.
+	for complaint, want := range map[string]bool{
+		"no server running on /tmp/tmux-1000/default":         true,
+		"error connecting to /tmp/tmux-1000/x (No such file)": true,
+		"no such session: =trig_main_k4f2":                    true,
+		"can't find session: trig_main_k4f2":                  true,
+		"protocol version mismatch (client 8, server 7)":      false,
+		"": false,
+	} {
+		if got := absent(complaint); got != want {
+			t.Errorf("absent(%q) = %v, want %v", complaint, got, want)
+		}
+	}
+}
+
+func TestCreateRunsTheCommandItIsGiven(t *testing.T) {
+	c := testCLI(t)
+	name := SessionName("main", "k4f2")
+	// Respawning an agent node re-runs its command (§9.2); a shell node passes
+	// none and gets a login shell.
+	if err := c.Create(name, t.TempDir(), "sleep 600", nil); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	out, err := exec.Command("tmux", "-L", c.Socket, "display-message", "-p", "-t", "="+name+":", "#{pane_start_command}").Output()
+	if err != nil {
+		t.Fatalf("display-message: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); !strings.Contains(got, "sleep 600") {
+		t.Errorf("pane start command = %q, want the command Create was given", got)
 	}
 }

@@ -39,8 +39,9 @@ func (c CLI) command(args ...string) *exec.Cmd {
 
 // Create starts a detached session in dir, seeding its session environment with
 // env so a later reconciliation pass can recognise the session on its own,
-// without consulting Trigpoint's state.
-func (c CLI) Create(session, dir string, env map[string]string) error {
+// without consulting Trigpoint's state. An empty cmd leaves the session on a
+// login shell; a command is what respawning an agent node re-runs (§9.2).
+func (c CLI) Create(session, dir, cmd string, env map[string]string) error {
 	if err := mustBeOurs(session, "create"); err != nil {
 		return err
 	}
@@ -56,7 +57,83 @@ func (c CLI) Create(session, dir string, env map[string]string) error {
 	for _, k := range keys {
 		args = append(args, "-e", k+"="+env[k])
 	}
+	// Last, because new-session reads everything after its flags as the
+	// command to run.
+	if cmd != "" {
+		args = append(args, cmd)
+	}
 	return c.run(args...)
+}
+
+// List names every session on the server, Trigpoint's and everyone else's.
+// Reconciliation needs the whole picture: a session under the prefix with no
+// node behind it is an orphan to reconstruct (§9.2), and the ones outside it
+// are what adoption offers (§9.3).
+//
+// No server running means no sessions, which is an answer rather than a
+// failure — it is what an empty map looks like from here.
+func (c CLI) List() ([]string, error) {
+	cmd := c.command("list-sessions", "-F", "#{session_name}")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		// Only "there is no server" is an empty answer. Every other non-zero
+		// exit — a protocol mismatch after tmux was upgraded under a live
+		// server, a socket that cannot be read — is a failure, and reporting
+		// one as "no sessions" would mark every node on the map dead.
+		complaint := strings.TrimSpace(stderr.String())
+		if absent(complaint) {
+			return nil, nil
+		}
+		if complaint != "" {
+			return nil, fmt.Errorf("tmux: %s", complaint)
+		}
+		return nil, fmt.Errorf("asking tmux for its sessions: %w", err)
+	}
+	// Split by line and not by word: a session outside Trigpoint's prefix may
+	// have spaces in its name, and half a name is a session that is not there.
+	var names []string
+	for line := range strings.SplitSeq(string(out), "\n") {
+		if name := strings.TrimRight(line, "\r"); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
+// Env reads a session's environment, which is where a session carries its own
+// provenance (§5.2). This is what lets a session describe the node it belongs
+// to when Trigpoint's state file no longer can.
+//
+// A session that has died between being listed and being asked about is a
+// failure here rather than an empty environment, because the two mean opposite
+// things to the caller: nothing to reconstruct, against a session that is there
+// and has had its variables cleared.
+func (c CLI) Env(session string) (map[string]string, error) {
+	cmd := c.command("show-environment", "-t", "="+session)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		if complaint := strings.TrimSpace(stderr.String()); complaint != "" {
+			return nil, fmt.Errorf("tmux: %s", complaint)
+		}
+		return nil, fmt.Errorf("asking tmux about session %q: %w", session, err)
+	}
+	env := map[string]string{}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		line = strings.TrimRight(line, "\r")
+		// A leading "-" is tmux reporting a variable it has been told to
+		// remove, which carries no value to read.
+		if line == "" || strings.HasPrefix(line, "-") {
+			continue
+		}
+		if key, value, ok := strings.Cut(line, "="); ok {
+			env[key] = value
+		}
+	}
+	return env, nil
 }
 
 // Kill removes a session. Closing Trigpoint kills nothing; only this does.
@@ -79,10 +156,14 @@ func (c CLI) Kill(session string) error {
 
 // alreadyGone recognises tmux complaining about something that is not there:
 // the session, or the server that would have held it.
-func alreadyGone(err error) bool {
-	msg := err.Error()
-	for _, absent := range []string{"can't find session", "session not found", "no server running", "error connecting to", "server exited unexpectedly"} {
-		if strings.Contains(msg, absent) {
+func alreadyGone(err error) bool { return absent(err.Error()) }
+
+// absent is the same judgement made on a complaint tmux wrote to stderr rather
+// than one already folded into an error. Wording varies between tmux versions,
+// so this is a list rather than a match.
+func absent(complaint string) bool {
+	for _, gone := range []string{"can't find session", "session not found", "no such session", "no server running", "error connecting to", "server exited unexpectedly"} {
+		if strings.Contains(complaint, gone) {
 			return true
 		}
 	}

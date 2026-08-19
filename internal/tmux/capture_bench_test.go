@@ -24,7 +24,7 @@ func benchSessions(b *testing.B, n int) (CLI, []string) {
 	names := make([]string, 0, n)
 	for i := range n {
 		name := SessionName("bench", fmt.Sprintf("n%03d", i))
-		if err := c.Create(name, b.TempDir(), nil); err != nil {
+		if err := c.Create(name, b.TempDir(), "", nil); err != nil {
 			b.Fatalf("Create %s: %v", name, err)
 		}
 		// Something to capture: an empty pane is not the case that costs.

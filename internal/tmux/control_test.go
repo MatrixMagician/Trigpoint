@@ -53,7 +53,7 @@ func TestChangedSurvivesALineItCannotRead(t *testing.T) {
 func TestCaptureReturnsRecentOutputWithTheColourItWasWrittenIn(t *testing.T) {
 	c := testCLI(t)
 	name := SessionName("main", "k4f2")
-	if err := c.Create(name, t.TempDir(), nil); err != nil {
+	if err := c.Create(name, t.TempDir(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	// Written straight to the pane rather than typed, so the assertion is about
@@ -88,7 +88,7 @@ func TestCaptureReturnsRecentOutputWithTheColourItWasWrittenIn(t *testing.T) {
 func TestCaptureRefusesToGuessWhichSessionWasMeant(t *testing.T) {
 	c := testCLI(t)
 	long := SessionName("main", "k4f2long")
-	if err := c.Create(long, t.TempDir(), nil); err != nil {
+	if err := c.Create(long, t.TempDir(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	// The short name is a prefix of the live one. A prefix match would hand
@@ -150,7 +150,7 @@ func TestWatchPushesActivityNamingTheSessionThatMoved(t *testing.T) {
 	// sessions the control client is not attached to.
 	attached, noisy := SessionName("main", "aaa"), SessionName("main", "zzz")
 	for _, name := range []string{attached, noisy} {
-		if err := c.Create(name, t.TempDir(), nil); err != nil {
+		if err := c.Create(name, t.TempDir(), "", nil); err != nil {
 			t.Fatalf("Create %s: %v", name, err)
 		}
 	}
@@ -164,7 +164,7 @@ func TestWatchPushesActivityNamingTheSessionThatMoved(t *testing.T) {
 func TestWatchReportsTheSessionListChanging(t *testing.T) {
 	c := testCLI(t)
 	first := SessionName("main", "aaa")
-	if err := c.Create(first, t.TempDir(), nil); err != nil {
+	if err := c.Create(first, t.TempDir(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	events := watching(t, c)
@@ -172,7 +172,7 @@ func TestWatchReportsTheSessionListChanging(t *testing.T) {
 	// one caused by a session that was not there when the client connected.
 	awaitEvent(t, events, nil, func(ev Event) bool { return ev.Kind == Sessions })
 
-	if err := c.Create(SessionName("main", "zzz"), t.TempDir(), nil); err != nil {
+	if err := c.Create(SessionName("main", "zzz"), t.TempDir(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	awaitEvent(t, events, nil, func(ev Event) bool { return ev.Kind == Sessions })
@@ -182,7 +182,7 @@ func TestWatchReconnectsWhenTheSessionItWasWatchingDies(t *testing.T) {
 	c := testCLI(t)
 	attached, survivor := SessionName("main", "aaa"), SessionName("main", "zzz")
 	for _, name := range []string{attached, survivor} {
-		if err := c.Create(name, t.TempDir(), nil); err != nil {
+		if err := c.Create(name, t.TempDir(), "", nil); err != nil {
 			t.Fatalf("Create %s: %v", name, err)
 		}
 	}
@@ -206,7 +206,7 @@ func TestWatchWaitsForASessionToWatchRatherThanGivingUp(t *testing.T) {
 	events := watching(t, c)
 
 	name := SessionName("main", "aaa")
-	if err := c.Create(name, t.TempDir(), nil); err != nil {
+	if err := c.Create(name, t.TempDir(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	awaitEvent(t, events, nil, func(ev Event) bool { return ev.Kind == Sessions })
@@ -214,7 +214,7 @@ func TestWatchWaitsForASessionToWatchRatherThanGivingUp(t *testing.T) {
 
 func TestWatchStopsWithItsContext(t *testing.T) {
 	c := testCLI(t)
-	if err := c.Create(SessionName("main", "aaa"), t.TempDir(), nil); err != nil {
+	if err := c.Create(SessionName("main", "aaa"), t.TempDir(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -264,7 +264,7 @@ func TestFirstSessionNeverReturnsHalfAName(t *testing.T) {
 	if err := c.run("new-session", "-d", "-s", spaced); err != nil {
 		t.Fatalf("new-session: %v", err)
 	}
-	if err := c.Create(SessionName("main", "zzz"), t.TempDir(), nil); err != nil {
+	if err := c.Create(SessionName("main", "zzz"), t.TempDir(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -279,7 +279,7 @@ func TestFirstSessionNeverReturnsHalfAName(t *testing.T) {
 
 func TestFollowingASessionThatIsNotThereReportsNoConnection(t *testing.T) {
 	c := testCLI(t)
-	if err := c.Create(SessionName("main", "aaa"), t.TempDir(), nil); err != nil {
+	if err := c.Create(SessionName("main", "aaa"), t.TempDir(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	out := make(chan Event, 8)

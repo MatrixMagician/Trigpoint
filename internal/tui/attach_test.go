@@ -62,7 +62,7 @@ func TestEnterOnAnEmptyCellDoesNothing(t *testing.T) {
 	}
 }
 
-func TestEnterReportsANodeWhoseSessionHasGone(t *testing.T) {
+func TestEnterOffersToRespawnANodeWhoseSessionHasGone(t *testing.T) {
 	m, sessions := mapWithOneNode(t, config.Default())
 	sessions.dead = true
 
@@ -70,8 +70,13 @@ func TestEnterReportsANodeWhoseSessionHasGone(t *testing.T) {
 	if cmd != nil {
 		t.Error("a dead node should not hand the terminal to a session that is not there")
 	}
-	if !strings.Contains(next.status, "api") {
-		t.Errorf("the status should name the node with no session, got %q", next.status)
+	// Enter on a node means "go to it"; when there is nothing to go to, the
+	// offer is to start it again (§9.2).
+	if view := next.View(); !strings.Contains(view, "Respawn") || !strings.Contains(view, "api") {
+		t.Errorf("Enter should offer to respawn the named node, got:\n%s", view)
+	}
+	if !next.dead["k4f2"] {
+		t.Error("an attach that found no session should mark the card dead")
 	}
 	if len(sessions.handoffs) != 0 {
 		t.Error("nothing should have been handed off")
