@@ -8,14 +8,14 @@ and the attachment. Quitting Trigpoint kills nothing — every session outlives 
 
 ## Status
 
-Early. The map, its cursor, shell nodes, note cards, the attach handoff, live previews, and
-adopting sessions you already had work; the rest of the spec does not exist yet.
+Early. The map, its cursor, shell nodes, note cards, the attach handoff, live previews, peek,
+and adopting sessions you already had work; the rest of the spec does not exist yet.
 
 | Milestone | | |
 | --- | --- | --- |
 | M0 | Skeleton — config, workspace store, `trig doctor` | done |
 | M1 | Nodes on a map — create/kill shell nodes, cursor and node movement, attach handoff | in progress (rename still to come) |
-| M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | in progress (previews, reconciliation, adoption done) |
+| M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | done |
 | M3 | Organisation — colours, tags, sizes, groups, filter, palette | to do |
 | M4 | Agents — agent nodes, status badges, attention jump | to do |
 | M5 | Polish and release | to do |
@@ -74,6 +74,7 @@ What is bound today:
 | `zz` | Centre the viewport on the cursor |
 | `0` | Jump to the origin |
 | `Enter` | Attach to the node under the cursor — the whole terminal, handed over. On a dead node, offer to respawn it. On a note, edit its body in `$EDITOR` |
+| `Space` | Peek: read the node's recent output full-screen, without attaching — `j`/`k`, `Space`/`b`, `g`/`G` scroll, `Esc` returns |
 | `n` | New shell node at the nearest free cell to the cursor |
 | `N` | New note — a rendered markdown card with no session behind it |
 | `A` | Adopt a tmux session Trigpoint did not create — `j`/`k` to choose, `Enter` to adopt |
@@ -177,6 +178,22 @@ that node takes it with it. When it goes, the slow tick carries on refreshing an
 reconnects to another session, backing off while there is nothing to attach to. The monitor
 never resizes or reads a byte from your panes; it only says *when* to look. See
 [ADR 0005](docs/adr/0005-activity-arrives-as-a-format-subscription.md).
+
+## Peek and unread
+
+`Space` reads a node's recent output full-screen: two thousand lines of it, against the
+four a card's body shows. It is the read-only counterpart to attach — peek never gives the
+node your keyboard, so the keys scroll the snapshot and reach nothing else, and `Esc`
+returns to the map. What you are reading is a snapshot taken when the peek opened, not a
+live terminal; peeking again is what asks the session what it has said since. A dead node
+still peeks, showing the last snapshot taken of it before its session went, or saying
+plainly that there was never one.
+
+Output arriving on a node while you are looking somewhere else marks its card unread — a
+hollow dot in place of the live one. Unread is a property of your attention rather than of
+the node's work, so it clears by looking: attaching or peeking, and nothing else. It is
+never written to disk, because a mark that survived a restart would be one nothing had
+learned anything about.
 
 Measured on tmux 3.7b: one capture costs ~1.3 ms, and a viewport of 40 nodes ~55 ms for the
 whole batch, near enough regardless of preview length — the cost is running `tmux`, not the

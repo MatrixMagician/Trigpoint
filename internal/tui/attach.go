@@ -21,7 +21,7 @@ type attachedMsg struct{ err error }
 // installed for the duration hands it back.
 func (m Model) attach() (tea.Model, tea.Cmd) {
 	node, ok := m.selected()
-	if !ok || m.handingOff {
+	if !ok || m.handoff != "" {
 		return m, nil
 	}
 	session := m.sessionOf(node)
@@ -70,7 +70,11 @@ func (m Model) attach() (tea.Model, tea.Cmd) {
 	// terminal only changes hands once Bubble Tea reaches the exec, and a
 	// second Enter landing in that gap would install a second binding for the
 	// first attach to release — leaving the second one with no way back.
-	m.handingOff = true
+	m.handoff = node.ID
+	// Attaching is looking, so whatever arrived on this node while you were
+	// elsewhere has now been seen (§8). The mark is cleared again on the way
+	// back, for the output that arrives while you are inside.
+	m = m.read(node.ID)
 	return m, tea.ExecProcess(handoff, onReturn(release, &stderr))
 }
 
