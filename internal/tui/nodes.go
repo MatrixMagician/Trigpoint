@@ -205,7 +205,11 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return next, cmd, true
 
 	case attachedMsg:
-		m.handingOff = false
+		// Cleared on the way back as well as on the way out: the events tmux
+		// pushed while the terminal was at the session arrive on the map now,
+		// and the output they announced is output you were sitting in front of.
+		m = m.read(m.handoff)
+		m.handoff = ""
 		if msg.err != nil {
 			m.status = msg.err.Error()
 		}
@@ -217,7 +221,7 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return next, cmd, true
 
 	case noteEditedMsg:
-		m.handingOff = false
+		m.handoff = ""
 		if msg.err != nil {
 			m.status = msg.err.Error()
 		}
@@ -388,6 +392,9 @@ var (
 const (
 	liveBadge = "●"
 	deadBadge = "✗"
+	// Unread is the same dot left hollow: it is the same node in the same
+	// state, with something in it you have not seen yet.
+	unreadBadge = "○"
 )
 
 // cards renders the occupied region of the map, one card per node, laid out on
@@ -410,7 +417,7 @@ func (m Model) cards() string {
 			node, ok := at[cell]
 			drawn := []string(nil)
 			if ok {
-				drawn = card(node, cell == m.ws.Viewport.Cursor, m.dead[node.ID], body, m.bodyOf(node))
+				drawn = card(node, cell == m.ws.Viewport.Cursor, m.dead[node.ID], m.unread[node.ID], body, m.bodyOf(node))
 			}
 			for i := range lines {
 				if col > minCell.Col {
@@ -462,7 +469,7 @@ func (m Model) bodyOf(n state.Node) []string {
 // card is a node's rendering on the map: a border carrying its title, the body
 // lines beneath it, and a border carrying its kind and age. Cards are never
 // persisted; nodes are.
-func card(n state.Node, selected, dead bool, body int, content []string) []string {
+func card(n state.Node, selected, dead, unread bool, body int, content []string) []string {
 	style := cardStyle
 	switch {
 	case selected:
@@ -476,8 +483,13 @@ func card(n state.Node, selected, dead bool, body int, content []string) []strin
 	// note's card carries no badge at all rather than a badge that means
 	// nothing.
 	badge := liveBadge
-	if dead {
+	switch {
+	case dead:
+		// One badge per card, and a node whose session has gone has nothing
+		// left to produce the output an unread mark would be about.
 		badge = deadBadge
+	case unread:
+		badge = unreadBadge
 	}
 	lead, trail := "╭─ "+badge+" ", kindLabel(n.Kind)+age(n.CreatedAt)
 	if !n.HasSession() {
@@ -505,25 +517,28 @@ func card(n state.Node, selected, dead bool, body int, content []string) []strin
 // and not bytes, so a line is never cut through the middle of an escape
 // sequence.
 func bodyLine(style lipgloss.Style, text string) string {
-	text = ansi.Truncate(text, cardBodyWidth, "…")
+	text = closeStyling(ansi.Truncate(text, cardBodyWidth, "…"))
 	pad := strings.Repeat(" ", maxInt(cardBodyWidth-lipgloss.Width(text), 0))
-	if strings.Contains(text, "\x1b") {
-		// Close any colour the renderer left open, so a heading's background
-		// cannot run out over the card's right-hand wall. Only worth adding
-		// where there is colour to close: on a terminal that cannot show any,
-		// the renderer emits none and a bare reset would be the only escape
-		// sequence in the whole frame.
-		text += "\x1b[0m"
-		if strings.Contains(text, "\x1b]8;;") {
-			// And any hyperlink, which a colour reset does not close.
-			// capture-pane emits OSC 8 for a pane that printed one, and
-			// glamour emits it for a link in a note; either left open makes
-			// the rest of the map clickable. Closing what is already closed
-			// costs a no-op.
-			text += "\x1b]8;;\x1b\\"
-		}
-	}
 	return style.Render("│ ") + text + pad + style.Render(" │")
+}
+
+// closeStyling shuts whatever the text left open, so a heading's background
+// cannot run out over the card's right-hand wall and a captured hyperlink
+// cannot make the rest of the screen clickable. Only worth adding where there
+// is styling to close: on a terminal that cannot show any, the renderer emits
+// none and a bare reset would be the only escape sequence in the whole frame.
+func closeStyling(text string) string {
+	if !strings.Contains(text, "\x1b") {
+		return text
+	}
+	text += "\x1b[0m"
+	if strings.Contains(text, "\x1b]8;;") {
+		// A hyperlink, which a colour reset does not close. capture-pane emits
+		// OSC 8 for a pane that printed one, and glamour emits it for a link in
+		// a note. Closing what is already closed costs a no-op.
+		text += "\x1b]8;;\x1b\\"
+	}
+	return text
 }
 
 func border(lead, text, tail string) string {

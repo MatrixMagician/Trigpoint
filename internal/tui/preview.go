@@ -95,10 +95,22 @@ func (m Model) onEvent(ev tmux.Event) (Model, tea.Cmd) {
 		next, cmd := m.markDirty(m.visible()...)
 		return next, tea.Batch(cmd, m.reconcile())
 	}
-	for _, n := range m.visibleNodes() {
-		if n.HasSession() && m.sessionOf(n) == ev.Session {
+	for _, n := range m.ws.Nodes {
+		if !n.HasSession() || m.sessionOf(n) != ev.Session {
+			continue
+		}
+		// Output arriving on a node is output you have not seen (§8) — unless
+		// you are inside that very node, and an event that arrives during an
+		// attach is cleared on the way back from it rather than filtered here:
+		// the events tmux pushed while the terminal was away go on arriving
+		// after it has come back.
+		m = m.unreadOn(n.ID)
+		if onScreen(m.visibleNodes(), n.ID) {
+			// Off screen there is no card to re-capture for, and the viewport
+			// coming back is what marks it stale again.
 			return m.markDirty(n.ID)
 		}
+		return m, nil
 	}
 	// Another workspace's node, or a session with no card in this map. There is
 	// nothing here to mark stale.
@@ -286,6 +298,16 @@ func (m Model) visibleNodes() []state.Node {
 	return seen
 }
 
+// onScreen reports whether a node is one of those with a card on screen.
+func onScreen(shown []state.Node, id string) bool {
+	for _, n := range shown {
+		if n.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // visible is visibleNodes by id, which is what marking dirty deals in.
 func (m Model) visible() []string {
 	nodes := m.visibleNodes()
@@ -325,7 +347,7 @@ func (m Model) forget(id string) Model {
 		}
 		m.previews = previews
 	}
-	m = m.alive(id)
+	m = m.alive(id).read(id)
 	if m.dirty[id] {
 		dirty := make(map[string]bool, len(m.dirty))
 		for other := range m.dirty {

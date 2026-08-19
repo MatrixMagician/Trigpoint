@@ -478,7 +478,7 @@ func TestCardGeometrySurvivesWideRunes(t *testing.T) {
 	} {
 		// The title is used as the body too, so the body lines are held to the
 		// same width as the borders.
-		for _, line := range card(state.Node{Kind: state.KindNote, Title: title, Note: title}, false, false, 2, noteLines(title)) {
+		for _, line := range card(state.Node{Kind: state.KindNote, Title: title, Note: title}, false, false, false, 2, noteLines(title)) {
 			if w := lipgloss.Width(line); w != cardWidth {
 				t.Errorf("a card line of %q is %d cells wide, want %d: %q", title, w, cardWidth, line)
 			}

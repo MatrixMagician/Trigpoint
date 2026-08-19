@@ -40,7 +40,7 @@ type noteEditedMsg struct {
 // editNote hands the terminal to $EDITOR on the note's body. It is Enter's
 // meaning on a note, the way attach is Enter's meaning on a shell node.
 func (m Model) editNote(node state.Node) (tea.Model, tea.Cmd) {
-	if m.handingOff {
+	if m.handoff != "" {
 		return m, nil
 	}
 	editor, collect, err := editorSession(node.Note)
@@ -55,7 +55,7 @@ func (m Model) editNote(node state.Node) (tea.Model, tea.Cmd) {
 	var stderr strings.Builder
 	editor.Stderr = &stderr
 
-	m.handingOff = true
+	m.handoff = node.ID
 	return m, tea.ExecProcess(editor, func(err error) tea.Msg {
 		body, collectErr := collect()
 		return noteEditedMsg{

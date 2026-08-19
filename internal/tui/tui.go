@@ -31,6 +31,7 @@ const (
 	modeConfirmRespawn
 	modeConfirmQuit
 	modeAdopt
+	modePeek
 )
 
 // Model is the map view's state. The workspace it renders is owned here; the
@@ -53,7 +54,14 @@ type Model struct {
 	candidates    []string     // the sessions the adoption picker is offering
 	choice        int          // which of them is under the picker's own cursor
 	awaitZ        bool         // the first z of zz has been pressed
-	handingOff    bool         // the terminal is out at a session or an editor, so Enter is spoken for
+	handoff       string       // the node the terminal is out at, so Enter is spoken for
+
+	// The peek: a snapshot of one node's output, read full-screen (§7.3). It
+	// is held here rather than fetched per frame because a peek is a snapshot —
+	// scrolling reads what was taken, it does not ask the session again.
+	peeking string   // the node whose output is on screen
+	peeked  []string // the snapshot taken of it
+	peekTop int      // the line of it the screen starts at
 
 	// dead is the nodes tmux has no session for (§9.2). It is derived on every
 	// reconciliation pass and never written to disk — see
@@ -67,6 +75,11 @@ type Model struct {
 	previews map[string][]string // the last snapshot taken of each node, by id
 	dirty    map[string]bool     // the cards whose snapshot has been overtaken
 	settling bool                // a debounce is running, so dirty cards have a tick coming
+	// unread is the cards output has arrived on since you last looked at them
+	// (§8). Attention, not work: it is set by activity and cleared by looking,
+	// and it is never persisted — a mark that survived a restart would be one
+	// nothing had learned anything about.
+	unread map[string]bool
 }
 
 func New(cfg config.Config, ws state.Workspace, stateDir string, sessions Sessions) Model {
@@ -99,6 +112,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if next, cmd, handled := m.updateNodeMsg(msg); handled {
 		return next, cmd
 	}
+	if next, cmd, handled := m.updatePeekMsg(msg); handled {
+		return next, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -108,7 +124,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A resize also decides which cards exist to be captured at all — before
 		// the first one there is no viewport, so this is where a map's previews
 		// start.
-		shown := m.follow()
+		// A resize re-windows an open peek as well as the map: a snapshot is
+		// not taken again when the terminal changes shape, only shown through a
+		// window of a different size.
+		shown := m.follow().clampPeek()
 		next, cmd := shown.markDirty(shown.visible()...)
 		return next, cmd
 
@@ -127,6 +146,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateConfirmQuit(msg)
 		case modeAdopt:
 			return m.updateAdopt(msg)
+		case modePeek:
+			return m.updatePeek(msg)
 		}
 		return m.updateNormal(msg)
 	}
@@ -177,6 +198,10 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// question is a subprocess, and a map that froze on it would freeze on
 		// the one thing adoption is for — a server with a great many sessions.
 		return m, m.adoptable()
+	case " ":
+		// Peek: the node's output, read without being given the keyboard
+		// (§7.3).
+		return m.peek()
 	case "x":
 		// The target is fixed here rather than read again at y, because a
 		// create landing while the prompt is up moves the cursor onto the new
@@ -204,8 +229,13 @@ func (m Model) View() string {
 	if m.width <= 0 || m.height <= 1 {
 		return ""
 	}
-	body := lipgloss.NewStyle().MaxWidth(m.width).MaxHeight(m.height - 1).
-		Render(lipgloss.Place(m.width, m.height-1, lipgloss.Center, lipgloss.Center, m.mapView()))
+	// A peek fills the screen the map would be on: it is the whole view, not an
+	// overlay, because the output it shows is the thing being read.
+	content := lipgloss.Place(m.width, m.height-1, lipgloss.Center, lipgloss.Center, m.mapView())
+	if m.mode == modePeek {
+		content = m.peekView()
+	}
+	body := lipgloss.NewStyle().MaxWidth(m.width).MaxHeight(m.height - 1).Render(content)
 	return lipgloss.JoinVertical(lipgloss.Left, body, m.statusBar())
 }
 
@@ -222,6 +252,8 @@ func (m Model) statusBar() string {
 	// into something they can no longer see. The error is still there when the
 	// prompt closes.
 	switch {
+	case m.mode == modePeek:
+		return m.bar(statusStyle, m.peekBar())
 	case m.mode == modeConfirmQuit:
 		return m.bar(statusStyle, "Quit Trigpoint? Sessions keep running. (y/n)")
 	case m.mode == modeTitle:
@@ -246,7 +278,7 @@ func (m Model) statusBar() string {
 	}
 
 	left := fmt.Sprintf("%s · %s", m.ws.Name, pluralise(len(m.ws.Nodes), "node"))
-	right := "⏎ attach · n new · N note · A adopt · x kill · q quit"
+	right := "⏎ attach · ␣ peek · n new · N note · A adopt · x kill · q quit"
 	if m.count != "" {
 		right = m.count + " · " + right
 	}
