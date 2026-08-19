@@ -17,7 +17,7 @@ several workspaces to switch between work; the rest of the spec does not exist y
 | M0 | Skeleton — config, workspace store, `trig doctor` | done |
 | M1 | Nodes on a map — create/kill shell nodes, cursor and node movement, attach handoff | done |
 | M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | done |
-| M3 | Organisation — colours, tags, sizes, workspaces, groups, filter, palette | in progress (groups, filter, palette to come) |
+| M3 | Organisation — colours, tags, sizes, workspaces, groups, filter, palette | in progress (groups to come) |
 | M4 | Agents — agent nodes, status badges, attention jump | to do |
 | M5 | Polish and release | to do |
 
@@ -86,6 +86,8 @@ What is bound today:
 | `x` | Kill the node under the cursor and its session (asks first; a note or a dead node is just removed) |
 | `Tab` / `Shift-Tab` | Next / previous workspace, in name order |
 | `w` | Workspace picker — `j`/`k` to choose, `Enter` to open, `n` new, `x` delete |
+| `/` | Filter the map — narrows as you type, `Enter` keeps it, `Esc` clears it |
+| `Ctrl-K` / `:` | Palette — every command, every node on every map, every workspace, every session to adopt |
 | `q` / `Ctrl-C` | Quit — sessions keep running |
 
 `Enter` hands the entire terminal to that node's tmux session, so TUI apps, 256-colour
@@ -172,6 +174,30 @@ The workspace on screen is read from its file on every switch rather than held i
 alongside the others. See
 [ADR 0010](docs/adr/0010-a-workspace-switch-is-a-reload.md) for what that buys and what it
 drops.
+
+## Finding things
+
+`/` narrows the map as you type, fuzzy-matching each card's title, its tags, and its kind —
+so `asrv` finds `api-server` and `infra` finds everything tagged with it. `Enter` closes the
+prompt and leaves the map narrowed; the status bar says how many cards of how many are left
+and what the filter is. `Esc` clears it, from the prompt or from the map.
+
+A filter is a way of looking at the map rather than a change to it: nothing moves and
+nothing is written. Cards it hides are hidden from the cursor as well as from the screen, so
+`Enter`, `r`, and `x` cannot reach a node with nothing on screen to say which one it is —
+and a hidden card costs no `capture-pane` while it is gone. If the card under the cursor is
+one of the ones that goes, the cursor moves to the nearest one that stays. Switching
+workspace clears the filter: it was typed at one map, and the next is not it.
+
+`Ctrl-K` or `:` opens the palette: one fuzzy list over every command the map has, every node
+on every workspace, every workspace to switch to, and every session there is to adopt.
+`↑`/`↓` (or `Ctrl-P`/`Ctrl-N`) choose, `Enter` runs, `Esc` closes. Choosing a node on
+another map switches to that workspace and puts the cursor on it.
+
+The palette is the discoverability backstop and the bindings are the fast path, so every
+action with a key has an entry — and a command entry replays its own binding rather than
+reimplementing it, which is what stops the two drifting apart. The same table names the keys
+the status bar offers as hints.
 
 ## Dead nodes and reconciliation
 

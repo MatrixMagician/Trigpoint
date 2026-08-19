@@ -107,7 +107,7 @@ func (m Model) moveCursor(d state.Cell, n int) Model {
 func (m Model) nearest(d state.Cell) (state.Cell, bool) {
 	cursor := m.ws.Viewport.Cursor
 	best, bestCost, found := state.Cell{}, 0, false
-	for _, n := range m.ws.Nodes {
+	for _, n := range m.filtered() {
 		col, row := n.Pos.Col-cursor.Col, n.Pos.Row-cursor.Row
 		along := col*d.Col + row*d.Row
 		if along <= 0 {

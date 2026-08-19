@@ -104,6 +104,10 @@ func (m Model) open(name string) (Model, tea.Cmd) {
 	}
 	m.ws, m.status = ws, ""
 	m.previews, m.dirty, m.unread, m.dead = nil, nil, nil, nil
+	// The filter goes with them. It is a way of looking at the map being left,
+	// and carrying it over would narrow a map nobody filtered — and could hide
+	// the very card the cursor arrives from the file on (§7.1).
+	m.filter = ""
 	// The pending nodes belong to the map that asked for them, so they are
 	// dropped too — and a create that lands afterwards is dropped with them,
 	// because nothing on this map is waiting for it.
@@ -135,9 +139,11 @@ func (m Model) openWorkspaces() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// ponytail: the picker lives in the status bar, one workspace at a time, the way
-// the adoption picker does. The palette (§7.2) is where workspace switching
-// properly belongs; this goes when the palette arrives.
+// updateWorkspace is the picker's own keys. It stays now the palette offers
+// workspace switching too (§7.2): the palette is the backstop for finding
+// things, and `w` is the fast path for the one list a user steps through
+// without knowing what they are looking for — it is also the only place a
+// workspace is made or deleted.
 func (m Model) updateWorkspace(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "j", "down":

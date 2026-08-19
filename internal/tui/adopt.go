@@ -27,6 +27,10 @@ type adoptableMsg struct {
 	names   []string
 	skipped []string
 	err     error
+	// forPalette marks the palette's own question (§7.2). Who asked is what
+	// decides what an answer does: one that outlives the palette must not open
+	// a picker on a keystroke nobody pressed.
+	forPalette bool
 }
 
 // addressable reports whether tmux can be asked about a session by name. tmux
@@ -104,9 +108,9 @@ func (m Model) openAdoption(msg adoptableMsg) Model {
 	return m
 }
 
-// ponytail: the picker lives in the status bar, one candidate at a time. The
-// palette (§7.2) is where adoption candidates properly belong and it lands with
-// M3; this is the M2 stand-in, and it goes when the palette arrives.
+// updateAdopt is the picker's own keys. The palette offers the same candidates
+// (§7.2) and is the way to one by name; this is the way to see what there is at
+// all, which is the question `A` is usually pressed to ask.
 func (m Model) updateAdopt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "j", "down":

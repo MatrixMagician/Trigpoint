@@ -284,11 +284,13 @@ func previewBody(text string, lines int) []string {
 	return all
 }
 
-// visibleNodes is the nodes with a card on screen. Only these are ever captured.
+// visibleNodes is the nodes with a card on screen. Only these are ever captured
+// — a card a filter is hiding is not on screen, and a snapshot nothing is
+// showing is a subprocess spent on nothing.
 func (m Model) visibleNodes() []state.Node {
 	min, max := m.bounds()
 	var seen []state.Node
-	for _, n := range m.ws.Nodes {
+	for _, n := range m.filtered() {
 		if n.Pos.Col >= min.Col && n.Pos.Col <= max.Col && n.Pos.Row >= min.Row && n.Pos.Row <= max.Row {
 			seen = append(seen, n)
 		}

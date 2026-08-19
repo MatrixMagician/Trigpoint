@@ -56,9 +56,11 @@ type nodeKilledMsg struct {
 }
 
 // selected is the node under the cursor. Nothing is selected on an empty cell,
-// which is the normal state of a fresh map.
+// which is the normal state of a fresh map — nor on a cell whose card a filter
+// is hiding (§7.1), because acting on a card that is not on screen is acting
+// blind.
 func (m Model) selected() (state.Node, bool) {
-	for _, n := range m.ws.Nodes {
+	for _, n := range m.filtered() {
 		if n.Pos == m.ws.Viewport.Cursor {
 			return n, true
 		}
@@ -255,6 +257,12 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return next, cmd, true
 
 	case adoptableMsg:
+		if msg.forPalette {
+			// The palette asked, so the answer folds into the list rather than
+			// taking the keyboard — and opens nothing at all if the palette has
+			// since closed, which is what the picker's own guard cannot see.
+			return m.withCandidates(msg), nil, true
+		}
 		return m.openAdoption(msg), nil, true
 
 	case nodeKilledMsg:
@@ -423,12 +431,13 @@ const (
 	unreadBadge = "○"
 )
 
-// cards renders the occupied region of the map, one card per node, laid out on
-// the cell grid so that a node's position on screen is its position on the map.
+// cards renders the occupied region of the map, one card per node the filter
+// leaves standing, laid out on the cell grid so that a node's position on
+// screen is its position on the map.
 func (m Model) cards() string {
 	minCell, maxCell := m.bounds()
 	at := make(map[state.Cell]state.Node, len(m.ws.Nodes))
-	for _, n := range m.ws.Nodes {
+	for _, n := range m.filtered() {
 		at[n.Pos] = n
 	}
 

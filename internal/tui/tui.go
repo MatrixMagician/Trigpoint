@@ -38,6 +38,8 @@ const (
 	modeWorkspace
 	modeNewWorkspace
 	modeConfirmDeleteWorkspace
+	modeFilter
+	modePalette
 )
 
 // Model is the map view's state. The workspace it renders is owned here; the
@@ -58,10 +60,15 @@ type Model struct {
 	creating      state.Kind   // the kind the title prompt is collecting a name for
 	editing       string       // the node an attribute prompt was opened on
 	count         string       // the count prefix typed so far, applied to the next motion
-	candidates    []string     // the sessions the adoption picker is offering
-	choice        int          // which of them is under the picker's own cursor
-	awaitZ        bool         // the first z of zz has been pressed
-	handoff       string       // the node the terminal is out at, so Enter is spoken for
+	// filter narrows the map to the cards matching it (§7.1). It outlives the
+	// prompt that collects it — a filter is how the map is being looked at, and
+	// Esc is the only thing that clears it.
+	filter     string
+	palette    []entry  // what the palette is offering, built when it opened
+	candidates []string // the sessions the adoption picker is offering
+	choice     int      // which of them is under the picker's own cursor
+	awaitZ     bool     // the first z of zz has been pressed
+	handoff    string   // the node the terminal is out at, so Enter is spoken for
 
 	// The peek: a snapshot of one node's output, read full-screen (§7.3). It
 	// is held here rather than fetched per frame because a peek is a snapshot —
@@ -165,6 +172,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateNewWorkspace(msg)
 		case modeConfirmDeleteWorkspace:
 			return m.updateConfirmDeleteWorkspace(msg)
+		case modeFilter:
+			return m.updateFilter(msg)
+		case modePalette:
+			return m.updatePalette(msg)
 		case modePeek:
 			return m.updatePeek(msg)
 		}
@@ -237,6 +248,14 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.cycleWorkspace(-1)
 	case "w":
 		return m.openWorkspaces()
+	case "/":
+		return m.openFilter()
+	case "ctrl+k", ":":
+		return m.openPalette()
+	case "esc":
+		// The one thing Esc does on the map: a filter is the only state the map
+		// itself can be left in.
+		return m.clearFilter()
 	case "x":
 		// The target is fixed here rather than read again at y, because a
 		// create landing while the prompt is up moves the cursor onto the new
@@ -267,16 +286,22 @@ func (m Model) View() string {
 	// A peek fills the screen the map would be on: it is the whole view, not an
 	// overlay, because the output it shows is the thing being read.
 	content := lipgloss.Place(m.width, m.height-1, lipgloss.Center, lipgloss.Center, m.mapView())
-	if m.mode == modePeek {
+	switch m.mode {
+	case modePeek:
 		content = m.peekView()
+	case modePalette:
+		content = m.paletteView()
 	}
 	body := lipgloss.NewStyle().MaxWidth(m.width).MaxHeight(m.height - 1).Render(content)
 	return lipgloss.JoinVertical(lipgloss.Left, body, m.statusBar())
 }
 
 func (m Model) mapView() string {
-	if len(m.ws.Nodes) == 0 {
+	switch {
+	case len(m.ws.Nodes) == 0:
 		return hintStyle.Render("The map is empty. Press n for a shell node, N for a note.")
+	case len(m.filtered()) == 0:
+		return hintStyle.Render("No card matches /" + flatten(m.filter) + ". Press esc to clear the filter.")
 	}
 	return m.cards()
 }
@@ -289,6 +314,10 @@ func (m Model) statusBar() string {
 	switch {
 	case m.mode == modePeek:
 		return m.bar(statusStyle, m.peekBar())
+	case m.mode == modePalette:
+		return m.bar(statusStyle, m.paletteBar())
+	case m.mode == modeFilter:
+		return m.bar(statusStyle, "Filter: "+flatten(m.input)+"▏")
 	case m.mode == modeConfirmQuit:
 		return m.bar(statusStyle, "Quit Trigpoint? Sessions keep running. (y/n)")
 	case m.mode == modeTitle:
@@ -329,6 +358,12 @@ func (m Model) statusBar() string {
 	}
 
 	left := fmt.Sprintf("%s · %s", m.ws.Name, pluralise(len(m.ws.Nodes), "node"))
+	if m.filter != "" {
+		// The count says what the filter is doing, and the query says what to
+		// press Esc to be rid of.
+		left = fmt.Sprintf("%s · %d of %s · /%s",
+			m.ws.Name, len(m.filtered()), pluralise(len(m.ws.Nodes), "node"), flatten(m.filter))
+	}
 	// The count prefix is what the next keystroke will do, so it is offered
 	// before any hint about which keystroke that might be.
 	prefix := ""
@@ -346,21 +381,19 @@ func (m Model) statusBar() string {
 	return m.bar(statusStyle, left+strings.Repeat(" ", gap)+right)
 }
 
-// hints are the keys the status bar offers, in the order it gives them up: a
+// fitHints is as many of the status bar's hints as width has room for. They are
+// the commands' own (§7.2), in the order the command table gives them up: a
 // terminal too narrow for all of them loses them from the end, rather than
 // losing the lot the moment one does not fit.
-var hints = []string{
-	"⏎ attach", "␣ peek", "n new", "N note", "A adopt", "x kill", "q quit",
-	"r name", "c colour", "t tags", "s size", "⇥ workspace",
-}
-
-// fitHints is as many of them as width has room for.
 func fitHints(width int) string {
 	var kept strings.Builder
-	for _, hint := range hints {
-		next := hint
+	for _, c := range commands {
+		if c.hint == "" {
+			continue
+		}
+		next := c.hint
 		if kept.Len() > 0 {
-			next = " · " + hint
+			next = " · " + c.hint
 		}
 		if lipgloss.Width(kept.String())+lipgloss.Width(next) > width {
 			break
