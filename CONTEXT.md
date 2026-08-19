@@ -10,7 +10,9 @@ meaning.
 
 **Workspace**:
 An independent map with its own nodes, groups, and default working directory. Workspaces
-do not share nodes; switching workspaces changes everything on screen.
+do not share nodes; switching workspaces changes everything on screen. The map view holds
+one at a time — a switch writes the workspace being left and reads the one arrived at; see
+[ADR 0010](docs/adr/0010-a-workspace-switch-is-a-reload.md).
 _Avoid_: project, board, space
 
 **Map**:

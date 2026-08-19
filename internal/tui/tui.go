@@ -35,6 +35,9 @@ const (
 	modeRename
 	modeTags
 	modeColour
+	modeWorkspace
+	modeNewWorkspace
+	modeConfirmDeleteWorkspace
 )
 
 // Model is the map view's state. The workspace it renders is owned here; the
@@ -156,6 +159,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateTags(msg)
 		case modeColour:
 			return m.updateColour(msg)
+		case modeWorkspace:
+			return m.updateWorkspace(msg)
+		case modeNewWorkspace:
+			return m.updateNewWorkspace(msg)
+		case modeConfirmDeleteWorkspace:
+			return m.updateConfirmDeleteWorkspace(msg)
 		case modePeek:
 			return m.updatePeek(msg)
 		}
@@ -222,6 +231,12 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openColours()
 	case "s":
 		return m.cycleSize()
+	case "tab":
+		return m.cycleWorkspace(1)
+	case "shift+tab":
+		return m.cycleWorkspace(-1)
+	case "w":
+		return m.openWorkspaces()
 	case "x":
 		// The target is fixed here rather than read again at y, because a
 		// create landing while the prompt is up moves the cursor onto the new
@@ -284,6 +299,16 @@ func (m Model) statusBar() string {
 		return m.bar(statusStyle, "Tags: "+flatten(m.input)+"▏")
 	case m.mode == modeColour:
 		return m.bar(statusStyle, m.colourBar())
+	case m.mode == modeWorkspace:
+		return m.bar(statusStyle, m.workspaceBar())
+	case m.mode == modeNewWorkspace:
+		return m.bar(statusStyle, "New workspace: "+flatten(m.input)+"▏")
+	case m.mode == modeConfirmDeleteWorkspace:
+		// What deleting a workspace does to the sessions its nodes named is
+		// nothing, and the confirmation says so rather than leaving the user to
+		// find out (§5.2).
+		return m.bar(statusStyle, fmt.Sprintf("Delete workspace %s? Its sessions keep running. (y/n)",
+			flatten(m.candidates[m.choice])))
 	case m.mode == modeAdopt:
 		return m.bar(statusStyle, fmt.Sprintf("Adopt %s (%d of %d) · j/k choose · ⏎ adopt · esc cancel",
 			flatten(m.candidates[m.choice]), m.choice+1, len(m.candidates)))
@@ -326,7 +351,7 @@ func (m Model) statusBar() string {
 // losing the lot the moment one does not fit.
 var hints = []string{
 	"⏎ attach", "␣ peek", "n new", "N note", "A adopt", "x kill", "q quit",
-	"r name", "c colour", "t tags", "s size",
+	"r name", "c colour", "t tags", "s size", "⇥ workspace",
 }
 
 // fitHints is as many of them as width has room for.
