@@ -29,7 +29,7 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
-# .vscode/
+.vscode/
 
 # Locally built binary (README: `go build -o trig ./cmd/trig`)
 /trig
