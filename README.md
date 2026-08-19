@@ -70,9 +70,10 @@ What is bound today:
 | `H J K L` | Move the selected node one cell, shoving whatever is in the way |
 | `zz` | Centre the viewport on the cursor |
 | `0` | Jump to the origin |
-| `Enter` | Attach to the node under the cursor — the whole terminal, handed over |
+| `Enter` | Attach to the node under the cursor — the whole terminal, handed over. On a note, edit its body in `$EDITOR` |
 | `n` | New shell node at the nearest free cell to the cursor |
-| `x` | Kill the node under the cursor and its session (asks first) |
+| `N` | New note — a markdown card with no session behind it |
+| `x` | Kill the node under the cursor and its session (asks first; a note is just removed) |
 | `q` / `Ctrl-C` | Quit — sessions keep running |
 
 `Enter` hands the entire terminal to that node's tmux session, so TUI apps, 256-colour
@@ -81,6 +82,12 @@ Trigpoint emulates none of it. `M-Escape` (configurable as `detach_key`) brings 
 the map redraws. Trigpoint installs that binding for the duration of the attach only, and
 points it at the node's session, so running Trigpoint inside tmux works rather than being
 refused; see [ADR 0002](docs/adr/0002-the-detach-binding-targets-the-session.md).
+
+A note has no tmux session at all. `Enter` on one edits its body in `$EDITOR` by the same
+mechanism attach uses — the terminal is released and taken back when the editor exits — and
+the card redraws with what you wrote. Quitting the editor without writing leaves the body as
+it was; writing and then exiting non-zero keeps the writing. Notes are never alive and never
+dead, so nothing about liveness applies to them — a note's card carries no status dot.
 
 Movement never refuses. `L` into an occupied cell shoves the occupant one cell right, and
 whatever is behind it too: one collision rule, which groups will reuse unchanged.

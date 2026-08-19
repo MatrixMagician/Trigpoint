@@ -431,12 +431,12 @@ func TestCardGeometrySurvivesWideRunes(t *testing.T) {
 		"🔥🔥🔥 deploy 🔥🔥🔥 everything 🔥🔥🔥",
 		"日本",
 	} {
-		top, bottom := card(state.Node{Kind: state.KindShell, Title: title}, false)
-		if w := lipgloss.Width(top); w != cardWidth {
-			t.Errorf("top border of %q is %d cells wide, want %d: %q", title, w, cardWidth, top)
-		}
-		if w := lipgloss.Width(bottom); w != cardWidth {
-			t.Errorf("bottom border of %q is %d cells wide, want %d: %q", title, w, cardWidth, bottom)
+		// The title is used as the body too, so the body lines are held to the
+		// same width as the borders.
+		for _, line := range card(state.Node{Kind: state.KindNote, Title: title, Note: title}, false, 2) {
+			if w := lipgloss.Width(line); w != cardWidth {
+				t.Errorf("a card line of %q is %d cells wide, want %d: %q", title, w, cardWidth, line)
+			}
 		}
 	}
 }

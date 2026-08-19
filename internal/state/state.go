@@ -70,6 +70,12 @@ type Node struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// HasSession reports whether a node has a tmux session behind it at all. Notes
+// never do (§6), so this — and not the kind — is what every session-touching
+// path asks: the session layer stays nil-tolerant, and a future kind with no
+// session of its own costs nothing to add.
+func (n Node) HasSession() bool { return n.Kind != KindNote }
+
 // Group is a named rectangular region of the map. Membership is containment and
 // nothing else — there is deliberately no member list to disagree with the picture.
 // See docs/adr/0001-groups-are-spatial.md.

@@ -44,9 +44,10 @@ type Model struct {
 	status        string       // the last failure, shown until the next action
 	pending       []state.Node // nodes whose sessions tmux has not confirmed yet
 	killing       string       // the node x was pressed on, held until y or n
+	creating      state.Kind   // the kind the title prompt is collecting a name for
 	count         string       // the count prefix typed so far, applied to the next motion
 	awaitZ        bool         // the first z of zz has been pressed
-	attaching     bool         // a handoff is under way, so Enter is spoken for
+	handingOff     bool         // the terminal is out at a session or an editor, so Enter is spoken for
 }
 
 func New(cfg config.Config, ws state.Workspace, stateDir string, sessions Sessions) Model {
@@ -93,6 +94,11 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "enter":
+		// A note has no session; Enter opens its body in $EDITOR instead, by the
+		// same release-the-terminal mechanism (§6).
+		if node, ok := m.selected(); ok && node.Kind == state.KindNote {
+			return m.editNote(node)
+		}
 		return m.attach()
 	case "q":
 		if m.cfg.General.ConfirmQuit {
@@ -102,7 +108,9 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Quitting Trigpoint kills nothing: every session outlives it (§5.2).
 		return m, tea.Quit
 	case "n":
-		m.mode, m.input = modeTitle, ""
+		m.mode, m.input, m.creating = modeTitle, "", state.KindShell
+	case "N":
+		m.mode, m.input, m.creating = modeTitle, "", state.KindNote
 	case "x":
 		// The target is fixed here rather than read again at y, because a
 		// create landing while the prompt is up moves the cursor onto the new
@@ -137,7 +145,7 @@ func (m Model) View() string {
 
 func (m Model) mapView() string {
 	if len(m.ws.Nodes) == 0 {
-		return hintStyle.Render("The map is empty. Press n to create a shell node.")
+		return hintStyle.Render("The map is empty. Press n for a shell node, N for a note.")
 	}
 	return m.cards()
 }
@@ -151,16 +159,21 @@ func (m Model) statusBar() string {
 	case m.mode == modeConfirmQuit:
 		return m.bar(statusStyle, "Quit Trigpoint? Sessions keep running. (y/n)")
 	case m.mode == modeTitle:
-		return m.bar(statusStyle, "Title: "+flatten(m.input)+"▏")
+		return m.bar(statusStyle, titleLabel(m.creating)+": "+flatten(m.input)+"▏")
 	case m.mode == modeConfirmKill:
 		node, _ := m.node(m.killing)
+		if !node.HasSession() {
+			// There is no session behind a note, so offering to kill one would
+			// be asking the user to confirm something that cannot happen.
+			return m.bar(statusStyle, fmt.Sprintf("Remove %s? (y/n)", flatten(node.Title)))
+		}
 		return m.bar(statusStyle, fmt.Sprintf("Kill %s and its session? (y/n)", flatten(node.Title)))
 	case m.status != "":
 		return m.bar(errorStyle, flatten(m.status))
 	}
 
 	left := fmt.Sprintf("%s · %s", m.ws.Name, pluralise(len(m.ws.Nodes), "node"))
-	right := "⏎ attach · n new · x kill · q quit"
+	right := "⏎ attach · n new · N note · x kill · q quit"
 	if m.count != "" {
 		right = m.count + " · " + right
 	}
@@ -190,6 +203,16 @@ func (m Model) bar(style lipgloss.Style, text string) string {
 // flatten turns any run of whitespace, newlines included, into a single space.
 func flatten(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// titleLabel names what the prompt is collecting a title for, so that N and n
+// are told apart once the prompt has replaced the hint that said which was
+// pressed.
+func titleLabel(k state.Kind) string {
+	if k == state.KindNote {
+		return "Note title"
+	}
+	return "Title"
 }
 
 func pluralise(n int, noun string) string {
