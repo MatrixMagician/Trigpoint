@@ -4,6 +4,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -102,5 +103,53 @@ func TestEnterOnASessionThatDiedReportsRatherThanHanging(t *testing.T) {
 	bound, err := exec.Command("tmux", "-L", cli.Socket, "list-keys", "-T", "root").Output()
 	if err == nil && strings.Contains(string(bound), "M-Escape") {
 		t.Errorf("a refused attach left a detach binding behind:\n%s", bound)
+	}
+}
+
+// TestAPreviewOfARealSessionReachesTheCard is the whole of §5.3 end to end: a
+// live session, a real capture-pane, and the output landing inside the card's
+// body with the colour it was written in.
+func TestAPreviewOfARealSessionReachesTheCard(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+	cli := tmux.CLI{Socket: "trig-test-preview"}
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", cli.Socket, "kill-server").Run() })
+
+	ws := state.Workspace{Name: "main", Dir: t.TempDir(), Nodes: []state.Node{
+		{ID: "k4f2", Kind: state.KindShell, Title: "api"},
+	}}
+	session := tmux.SessionName("main", "k4f2")
+	if err := cli.Create(session, ws.Dir, nil); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := exec.Command("tmux", "-L", cli.Socket, "send-keys", "-t", "="+session+":",
+		`printf '\033[31m200 GET /health\033[0m\n'`, "Enter").Run(); err != nil {
+		t.Fatalf("send-keys: %v", err)
+	}
+
+	m := New(config.Default(), ws, t.TempDir(), cli)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = sized.(Model)
+
+	// The slow tick alone, with no event stream running: the fallback has to be
+	// enough on its own, because it is all there is while the monitor is down.
+	var view string
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		// The tick's own cmd is dropped: it schedules the next tick, and this
+		// test drives the clock rather than waiting on it.
+		m = update(t, m, refreshTickMsg{})
+		m = run(t, m, captureDueMsg{})
+		if view = m.View(); strings.Contains(view, "200 GET /health") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !strings.Contains(view, "200 GET /health") {
+		t.Fatalf("the card should show the session's recent output, got:\n%s", view)
+	}
+	if !strings.Contains(view, "\x1b[31m") {
+		t.Errorf("the preview should keep the colour it was captured in, got:\n%q", view)
 	}
 }

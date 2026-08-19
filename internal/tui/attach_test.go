@@ -116,10 +116,9 @@ func TestReturningFromAttachReportsWhatWentWrong(t *testing.T) {
 
 func TestReturningFromAttachLeavesTheMapAsItWas(t *testing.T) {
 	m, _ := mapWithOneNode(t, config.Default())
-	next, cmd := m.Update(attachedMsg{})
-	if cmd != nil {
-		t.Error("returning from an attach should not set more work going")
-	}
+	// The one thing it does set going is a fresh capture of what happened
+	// while the terminal was away — see TestReturningFromAttachRefreshesImmediately.
+	next, _ := m.Update(attachedMsg{})
 	if got := next.(Model); got.status != "" || len(got.ws.Nodes) != 1 {
 		t.Errorf("the map should be as it was, got status %q and %d nodes", got.status, len(got.ws.Nodes))
 	}

@@ -3,6 +3,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -47,7 +48,11 @@ type Model struct {
 	creating      state.Kind   // the kind the title prompt is collecting a name for
 	count         string       // the count prefix typed so far, applied to the next motion
 	awaitZ        bool         // the first z of zz has been pressed
-	handingOff     bool         // the terminal is out at a session or an editor, so Enter is spoken for
+	handingOff    bool         // the terminal is out at a session or an editor, so Enter is spoken for
+
+	previews map[string][]string // the last snapshot taken of each node, by id
+	dirty    map[string]bool     // the cards whose snapshot has been overtaken
+	settling bool                // a debounce is running, so dirty cards have a tick coming
 }
 
 func New(cfg config.Config, ws state.Workspace, stateDir string, sessions Sessions) Model {
@@ -59,9 +64,21 @@ func New(cfg config.Config, ws state.Workspace, stateDir string, sessions Sessio
 	return Model{cfg: cfg, ws: ws, stateDir: stateDir, sessions: sessions}
 }
 
-func (m Model) Init() tea.Cmd { return nil }
+// Init starts the two things that keep previews current: the control-mode
+// client's event stream, and the slow tick that refreshes whatever the stream
+// missed — including the whole time there was no stream.
+//
+// The stream lives as long as the process does. There is nothing to cancel it
+// with, and nothing to cancel it for: quitting Trigpoint closes stdin on the
+// control client, which is how tmux is told the client is gone.
+func (m Model) Init() tea.Cmd {
+	return tea.Batch(listen(m.sessions.Watch(context.Background())), m.slowTick())
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if next, cmd, handled := m.updatePreview(msg); handled {
+		return next, cmd
+	}
 	if next, cmd, handled := m.updateNodeMsg(msg); handled {
 		return next, cmd
 	}
@@ -70,7 +87,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		// A shrunk terminal can leave the cursor outside the viewport, and a
 		// cursor you cannot see is a node you are about to move blind.
-		return m.follow(), nil
+		//
+		// A resize also decides which cards exist to be captured at all — before
+		// the first one there is no viewport, so this is where a map's previews
+		// start.
+		shown := m.follow()
+		next, cmd := shown.markDirty(shown.visible()...)
+		return next, cmd
 
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC {
@@ -95,7 +118,11 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// take is still a key that ends a half-typed count.
 	m, handled := m.motion(msg.String())
 	if handled {
-		return m, nil
+		// Scrolling brings cards into view that have never been captured. Only
+		// those: moving the cursor is not news about any session, so a map that
+		// is merely being navigated does not keep asking tmux the same question.
+		next, cmd := m.markDirty(m.unpreviewed()...)
+		return next, cmd
 	}
 	switch msg.String() {
 	case "enter":

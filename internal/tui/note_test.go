@@ -78,12 +78,17 @@ func TestANoteCardShowsItsBody(t *testing.T) {
 	}
 }
 
-func TestACardWithNoNoteOnTheMapKeepsItsTwoLines(t *testing.T) {
-	m, _, _ := newNodeModel(t, state.Workspace{Name: "main", Nodes: []state.Node{
+func TestACardWithNothingToShowKeepsItsTwoLines(t *testing.T) {
+	// No note to render and no preview lines configured: a card with nothing to
+	// put in a body is exactly its two borders.
+	cfg := config.Default()
+	cfg.General.PreviewLines = config.PreviewLines{}
+	sessions := &fakeSessions{}
+	m := New(cfg, state.Workspace{Name: "main", Nodes: []state.Node{
 		{ID: "k4f2", Kind: state.KindShell, Title: "api"},
-	}})
+	}}, t.TempDir(), sessions)
 	if got := m.cardRows(); got != cardRowsNoBody {
-		t.Errorf("a map with no notes should still lay out %d-row cells, got %d", cardRowsNoBody, got)
+		t.Errorf("a card with nothing to show should lay out %d-row cells, got %d", cardRowsNoBody, got)
 	}
 }
 
@@ -275,7 +280,7 @@ func TestANoteCardIsNeverWiderThanACard(t *testing.T) {
 		"| a | table | with | columns |\n| - | - | - | - |\n| 1 | 2 | 3 | 4 |",
 		"日本語の長い行を折り返さなければならない場合はどうなるでしょうか",
 	} {
-		for _, line := range card(state.Node{Kind: state.KindNote, Title: "todo", Note: body}, false, maxNoteLines) {
+		for _, line := range card(state.Node{Kind: state.KindNote, Title: "todo", Note: body}, false, maxNoteLines, noteLines(body)) {
 			if w := lipgloss.Width(line); w != cardWidth {
 				t.Errorf("a card line for %q is %d cells wide, want %d: %q", body, w, cardWidth, line)
 			}
@@ -327,11 +332,11 @@ func TestRenderedNotesAreCached(t *testing.T) {
 // apply to notes, so the status dot every other card carries would be a badge
 // that means nothing.
 func TestANoteCardCarriesNoBadge(t *testing.T) {
-	note := card(state.Node{Kind: state.KindNote, Title: "todo"}, false, 0)
+	note := card(state.Node{Kind: state.KindNote, Title: "todo"}, false, 0, nil)
 	if strings.Contains(note[0], "●") {
 		t.Errorf("a note is never alive or dead, so it carries no badge: %q", note[0])
 	}
-	shell := card(state.Node{Kind: state.KindShell, Title: "api"}, false, 0)
+	shell := card(state.Node{Kind: state.KindShell, Title: "api"}, false, 0, nil)
 	if !strings.Contains(shell[0], "●") {
 		t.Errorf("a shell node should still carry its status dot: %q", shell[0])
 	}

@@ -8,14 +8,14 @@ and the attachment. Quitting Trigpoint kills nothing — every session outlives 
 
 ## Status
 
-Early. The map, its cursor, shell nodes, and the attach handoff work; the rest of the spec
-does not exist yet.
+Early. The map, its cursor, shell nodes, note cards, the attach handoff, and live previews
+work; the rest of the spec does not exist yet.
 
 | Milestone | | |
 | --- | --- | --- |
 | M0 | Skeleton — config, workspace store, `trig doctor` | done |
 | M1 | Nodes on a map — create/kill shell nodes, cursor and node movement, attach handoff | in progress (rename still to come) |
-| M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | to do |
+| M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | in progress (previews done) |
 | M3 | Organisation — colours, tags, sizes, groups, filter, palette | to do |
 | M4 | Agents — agent nodes, status badges, attention jump | to do |
 | M5 | Polish and release | to do |
@@ -101,6 +101,29 @@ whatever is behind it too: one collision rule, which groups will reuse unchanged
 The cursor position and the viewport are saved with the workspace, so reopening Trigpoint
 puts you back where you were looking.
 
+## Live previews
+
+Each card shows a snapshot of its node's recent output, with its colour, cut to the line
+count for that card size. A preview is always a snapshot and never a live terminal — that
+distinction is the whole architecture, and it is why a map of dozens of nodes costs what one
+does.
+
+One long-lived tmux control-mode client pushes the events that say a card has gone stale.
+Activity marks it dirty rather than capturing on the spot; every dirty card that is actually
+on screen is then captured together, once per `preview_debounce_ms`. A slow
+`refresh_tick_s` catches whatever the events missed, and returning from an attach refreshes
+at once rather than waiting for either.
+
+The event connection is expected to drop — it attaches to one of your own nodes, so killing
+that node takes it with it. When it goes, the slow tick carries on refreshing and the client
+reconnects to another session, backing off while there is nothing to attach to. The monitor
+never resizes or reads a byte from your panes; it only says *when* to look. See
+[ADR 0005](docs/adr/0005-activity-arrives-as-a-format-subscription.md).
+
+Measured on tmux 3.7b: one capture costs ~1.3 ms, and a viewport of 40 nodes ~55 ms for the
+whole batch, near enough regardless of preview length — the cost is running `tmux`, not the
+lines it hands back.
+
 ## Configuration
 
 `~/.config/trig/config.toml`, or `$XDG_CONFIG_HOME/trig/config.toml`. It is optional — the
@@ -125,8 +148,9 @@ l = 10
 cmd = "claude"
 ```
 
-Settings whose features have not landed yet (previews, agent status) are read and stored,
-but nothing consumes them.
+`preview_debounce_ms`, `refresh_tick_s`, and `preview_lines` are live. Settings whose
+features have not landed yet (card sizes, agent status) are read and stored, but nothing
+consumes them — an unset size takes the `m` line count.
 
 ## Files
 

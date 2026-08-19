@@ -1,9 +1,11 @@
 package tmux
 
 import (
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -35,6 +37,15 @@ func TestOursRecognisesOnlyThePrefix(t *testing.T) {
 	}
 }
 
+// socketSeq numbers the private servers. Repeating a run (-count=2) would
+// otherwise put a fresh server on a socket the last one is still letting go of,
+// and the create that lands in that gap fails on a server already on its way out.
+var socketSeq atomic.Int64
+
+func testSocket(name string) string {
+	return fmt.Sprintf("trig-test-%s-%d", name, socketSeq.Add(1))
+}
+
 // testCLI runs against a private tmux server so a test can never disturb the
 // sessions the user is actually working in.
 func testCLI(t *testing.T) CLI {
@@ -42,7 +53,7 @@ func testCLI(t *testing.T) CLI {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux is not installed")
 	}
-	c := CLI{Socket: "trig-test-" + t.Name()}
+	c := CLI{Socket: testSocket(t.Name())}
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", c.Socket, "kill-server").Run() })
 	return c
 }
