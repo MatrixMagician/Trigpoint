@@ -7,6 +7,7 @@ package tmux
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -80,7 +81,7 @@ func (c CLI) Kill(session string) error {
 // the session, or the server that would have held it.
 func alreadyGone(err error) bool {
 	msg := err.Error()
-	for _, absent := range []string{"can't find session", "session not found", "no server running", "error connecting to"} {
+	for _, absent := range []string{"can't find session", "session not found", "no server running", "error connecting to", "server exited unexpectedly"} {
 		if strings.Contains(msg, absent) {
 			return true
 		}
@@ -100,6 +101,57 @@ func (c CLI) Exists(session string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("asking tmux about session %q: %w", session, err)
+}
+
+// Handoff prepares the attach handoff (SPEC §5.1): it installs the binding that
+// brings the user back, and returns the command that hands the terminal over
+// together with the release to run once that command has exited. The two are
+// returned as a pair because they are one thing — a binding that outlived the
+// attach would fire on a map that has nothing to detach.
+//
+// No prefix check here. Attaching reads a session rather than changing it, and
+// adoption (§9.3) attaches to sessions that were never Trigpoint's.
+func (c CLI) Handoff(session, detachKey string) (attach *exec.Cmd, release func() error, err error) {
+	if strings.TrimSpace(detachKey) == "" {
+		return nil, nil, errors.New("no detach key is configured, so attaching would leave no way back to the map")
+	}
+	// The binding names the session rather than whoever pressed the key.
+	// Trigpoint running inside tmux means the outer client sees the key first,
+	// and a plain detach-client would detach that one — dropping the user out
+	// of their own tmux instead of back to the map.
+	//
+	// ponytail: a key the user had bound themselves in the root table is taken
+	// for the duration of the attach and dropped on the way back. Read the
+	// existing binding and put it back if anyone ever notices.
+	if err := c.run("bind-key", "-n", detachKey, "detach-client", "-s", "="+session); err != nil {
+		return nil, nil, err
+	}
+	attach = c.command("attach-session", "-t", "="+session)
+	// Nesting is never refused (§5.1): an unset TMUX is what tells tmux this
+	// attach is deliberate rather than a pane attaching to the session it is
+	// already inside.
+	attach.Env = withoutTmux(os.Environ())
+	// The release tolerates a server that is already gone for the same reason
+	// Kill does: typing `exit` in the last session ends the handoff by taking
+	// the whole server down, which is the most ordinary way to leave a node.
+	return attach, func() error {
+		if err := c.run("unbind-key", "-n", detachKey); err != nil && !alreadyGone(err) {
+			return err
+		}
+		return nil
+	}, nil
+}
+
+// withoutTmux drops the variables by which tmux recognises a nested attach.
+func withoutTmux(env []string) []string {
+	kept := make([]string, 0, len(env))
+	for _, v := range env {
+		if strings.HasPrefix(v, "TMUX=") || strings.HasPrefix(v, "TMUX_PANE=") {
+			continue
+		}
+		kept = append(kept, v)
+	}
+	return kept
 }
 
 func mustBeOurs(session, verb string) error {

@@ -8,12 +8,13 @@ and the attachment. Quitting Trigpoint kills nothing — every session outlives 
 
 ## Status
 
-Early. The map, its cursor, and shell nodes work; the rest of the spec does not exist yet.
+Early. The map, its cursor, shell nodes, and the attach handoff work; the rest of the spec
+does not exist yet.
 
 | Milestone | | |
 | --- | --- | --- |
 | M0 | Skeleton — config, workspace store, `trig doctor` | done |
-| M1 | Nodes on a map — create/kill shell nodes, cursor and node movement | in progress (attach and rename still to come) |
+| M1 | Nodes on a map — create/kill shell nodes, cursor and node movement, attach handoff | in progress (rename still to come) |
 | M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | to do |
 | M3 | Organisation — colours, tags, sizes, groups, filter, palette | to do |
 | M4 | Agents — agent nodes, status badges, attention jump | to do |
@@ -69,9 +70,17 @@ What is bound today:
 | `H J K L` | Move the selected node one cell, shoving whatever is in the way |
 | `zz` | Centre the viewport on the cursor |
 | `0` | Jump to the origin |
+| `Enter` | Attach to the node under the cursor — the whole terminal, handed over |
 | `n` | New shell node at the nearest free cell to the cursor |
 | `x` | Kill the node under the cursor and its session (asks first) |
 | `q` / `Ctrl-C` | Quit — sessions keep running |
+
+`Enter` hands the entire terminal to that node's tmux session, so TUI apps, 256-colour
+output, resize, and copy-mode behave exactly as they do under a plain `tmux attach` —
+Trigpoint emulates none of it. `M-Escape` (configurable as `detach_key`) brings you back and
+the map redraws. Trigpoint installs that binding for the duration of the attach only, and
+points it at the node's session, so running Trigpoint inside tmux works rather than being
+refused; see [ADR 0002](docs/adr/0002-the-detach-binding-targets-the-session.md).
 
 Movement never refuses. `L` into an occupied cell shoves the occupant one cell right, and
 whatever is behind it too: one collision rule, which groups will reuse unchanged.
@@ -126,7 +135,12 @@ go build ./... && go vet ./... && go test ./...
 ```
 
 The TUI is tested without a tmux server — everything tmux does sits behind one small
-interface — so the suite needs no special environment.
+interface — so the suite needs no special environment. Tests that do want tmux (session
+lifecycle, the attach handoff) run against a private `tmux -L` socket and skip themselves
+when tmux is absent, so they can never touch the sessions you are working in.
+
+The handoff also has a manual matrix that no test can cover: see
+[`docs/handoff-test-matrix.md`](docs/handoff-test-matrix.md).
 
 Before changing anything, read [`CONTEXT.md`](CONTEXT.md) for the vocabulary the code and
 the issues use, and [`docs/adr/`](docs/adr) for the decisions already taken.

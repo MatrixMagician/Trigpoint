@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -18,6 +19,10 @@ import (
 type Sessions interface {
 	Create(session, dir string, env map[string]string) error
 	Kill(session string) error
+	Exists(session string) (bool, error)
+	// Handoff prepares an attach: the command that takes the terminal, and the
+	// release to run once it has given the terminal back.
+	Handoff(session, detachKey string) (*exec.Cmd, func() error, error)
 }
 
 // maxTitleLen keeps a title inside a card and inside a sensible status line.
@@ -145,6 +150,15 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.ws.Nodes = append(append([]state.Node(nil), m.ws.Nodes...), node)
 		m.ws.Viewport.Cursor = node.Pos
 		return m.follow().save(), nil, true
+
+	case attachedMsg:
+		// Bubble Tea repaints the map itself on taking the terminal back, so
+		// there is nothing to do here but report.
+		m.attaching = false
+		if msg.err != nil {
+			m.status = msg.err.Error()
+		}
+		return m, nil, true
 
 	case nodeKilledMsg:
 		if msg.err != nil {
