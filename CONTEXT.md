@@ -210,3 +210,19 @@ standing risk, not an implementation detail.
 Reading a node's recent output full-screen without attaching. The read-only counterpart to
 attach: peek never gives the node your keyboard.
 _Avoid_: preview (that is the card's), view, inspect
+
+**Filter**:
+A query that narrows the map to the cards matching it, on title, tags, or kind. A way of
+looking at the map, not a change to it: nothing moves and nothing is written. A card the
+filter hides is hidden from the cursor too, so it cannot be attached to, renamed, or killed
+while it is off screen — and the cursor moves to the nearest card that stays rather than
+being left pointing at one that has gone. A filter belongs to the map it was typed at and
+does not survive a workspace switch.
+_Avoid_: search (that is the palette's), hide, query
+
+**Palette**:
+The single fuzzy list over every command, every node on every map, every workspace, and
+every session there is to adopt. The discoverability backstop — bindings are the fast path,
+and an action reachable only by its binding is one nobody can find. Command entries replay
+their own bindings rather than reimplementing them.
+_Avoid_: menu, launcher, command bar, palette (for the accent colours — those are a *set*)
