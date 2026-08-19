@@ -9,14 +9,15 @@ and the attachment. Quitting Trigpoint kills nothing — every session outlives 
 ## Status
 
 Early. The map, its cursor, shell nodes, note cards, the attach handoff, live previews, peek,
-and adopting sessions you already had work; the rest of the spec does not exist yet.
+adopting sessions you already had, and the four card attributes — name, colour, tags, size —
+work; the rest of the spec does not exist yet.
 
 | Milestone | | |
 | --- | --- | --- |
 | M0 | Skeleton — config, workspace store, `trig doctor` | done |
-| M1 | Nodes on a map — create/kill shell nodes, cursor and node movement, attach handoff | in progress (rename still to come) |
+| M1 | Nodes on a map — create/kill shell nodes, cursor and node movement, attach handoff | done |
 | M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | done |
-| M3 | Organisation — colours, tags, sizes, groups, filter, palette | to do |
+| M3 | Organisation — colours, tags, sizes, groups, filter, palette | in progress (groups, filter, palette to come) |
 | M4 | Agents — agent nodes, status badges, attention jump | to do |
 | M5 | Polish and release | to do |
 
@@ -77,6 +78,10 @@ What is bound today:
 | `Space` | Peek: read the node's recent output full-screen, without attaching — `j`/`k`, `Space`/`b`, `g`/`G` scroll, `Esc` returns |
 | `n` | New shell node at the nearest free cell to the cursor |
 | `N` | New note — a rendered markdown card with no session behind it |
+| `r` | Rename the node under the cursor |
+| `c` | Cycle its accent colour · `C` pick one by name — `j`/`k` to choose, `Enter` to set |
+| `t` | Edit its tags — space-separated, several to a node |
+| `s` | Cycle its card size, small → medium → large |
 | `A` | Adopt a tmux session Trigpoint did not create — `j`/`k` to choose, `Enter` to adopt |
 | `x` | Kill the node under the cursor and its session (asks first; a note or a dead node is just removed) |
 | `q` / `Ctrl-C` | Quit — sessions keep running |
@@ -95,10 +100,39 @@ it was; writing and then exiting non-zero keeps the writing. Notes are never ali
 dead, so nothing about liveness applies to them — a note's card carries no status dot.
 
 The card shows the markdown rendered, not its source: headings, bullets, and emphasis come
-out as themselves, wrapped to the card and capped at ten lines so one long note cannot cost
-every other card its screen. See
+out as themselves, wrapped to the card and capped at the note's card size so one long note
+cannot cost every other card its screen. See
 [ADR 0004](docs/adr/0004-note-bodies-render-through-glamour.md), which also records what
 rendering markdown costs the binary.
+
+## Card attributes
+
+Four things about a node are yours to set, and all four are the node rather than the session
+behind it — so all four persist, and all four are on the card.
+
+`r` renames. `c` steps the accent colour on by one and off the end of the palette back to a
+plain border; `C` picks one by name, and the card wears the colour while you choose, because
+a colour is a thing you pick by seeing it. `t` edits the tags: space-separated, hash
+optional, several to a node. See
+[ADR 0008](docs/adr/0008-accent-colours-are-a-named-palette.md) for why the colours are a
+closed set of names.
+
+`s` cycles the card size, small → medium → large, which is how many preview lines the card
+shows — `preview_lines` in config, `0 / 4 / 10` by default. A small card shows none and is
+never captured at all, which is how a node you have finished watching stops costing a
+`capture-pane` per tick. A note is sized the same way, except that a small one keeps its
+first line: a preview is a snapshot of output the session still has, and `Space` reads it in
+full, but a note's body is the node itself.
+
+Every card on the map is the same height — the hungriest node's — so one large card grows
+the rest, and the small one beside it still shows nothing. See
+[ADR 0003](docs/adr/0003-every-card-on-the-map-is-the-same-height.md).
+
+The border carries the lot: the status dot and the title along the top with the tags at its
+right-hand end, the kind and the session's age along the bottom, and the accent colour on
+the border itself. A card is 22 cells wide, so the title takes what it needs and the tags
+take what is left — below a few cells the tags go rather than shrink, because the name is
+what says which node this is.
 
 Movement never refuses. `L` into an occupied cell shoves the occupant one cell right, and
 whatever is behind it too: one collision rule, which groups will reuse unchanged.
@@ -182,7 +216,7 @@ never resizes or reads a byte from your panes; it only says *when* to look. See
 ## Peek and unread
 
 `Space` reads a node's recent output full-screen: two thousand lines of it, against the
-four a card's body shows. It is the read-only counterpart to attach — peek never gives the
+four a medium card's body shows. It is the read-only counterpart to attach — peek never gives the
 node your keyboard, so the keys scroll the snapshot and reach nothing else, and `Esc`
 returns to the map. What you are reading is a snapshot taken when the peek opened, not a
 live terminal; peeking again is what asks the session what it has said since. A dead node
@@ -223,9 +257,9 @@ l = 10
 cmd = "claude"
 ```
 
-`preview_debounce_ms`, `refresh_tick_s`, and `preview_lines` are live. Settings whose
-features have not landed yet (card sizes, agent status) are read and stored, but nothing
-consumes them — an unset size takes the `m` line count.
+`preview_debounce_ms`, `refresh_tick_s`, and `preview_lines` are live; a node that has never
+been sized takes the `m` line count. Settings whose features have not landed yet (agent
+status) are read and stored, but nothing consumes them.
 
 ## Files
 

@@ -152,7 +152,7 @@ func (m Model) adopt(session string) (tea.Model, tea.Cmd) {
 	node := state.Node{
 		ID:      draft.NewNodeID(),
 		Kind:    state.KindShell,
-		Title:   clampTitle(sanitise(session)),
+		Title:   clampRunes(sanitise(session), maxTitleLen),
 		Tags:    []string{adoptedTag},
 		Pos:     draft.NearestFreeCell(m.ws.Viewport.Cursor),
 		Session: session,

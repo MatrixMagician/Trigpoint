@@ -24,12 +24,13 @@ land, and a map of two-line notes would waste half its screen.
 
 **Per-node card size deciding the cap.** Deferred, not rejected: `Size` is the field this
 cap belongs on (SPEC §7.3, `s`), but nothing sets it until card attributes land, so wiring
-it now would be a switch with two unreachable arms. One constant until then.
+it now would be a switch with two unreachable arms. One constant until then. — Landed in M3
+(#10); see the update below.
 
 ## Consequences
 
 Adding one long note grows every card on the map. This is the honest cost of a grid, and it
-is bounded by `maxNoteLines`, so a thousand-line note costs ten lines and not a thousand.
+is bounded, so a thousand-line note costs ten lines and not a thousand.
 
 Asking a node how tall it wants to be has to be cheap, because the question is asked of every
 node on the map on every frame. For notes that means the rendered body is cached rather than
@@ -38,3 +39,17 @@ re-parsed — see [ADR 0004](0004-note-bodies-render-through-glamour.md).
 Live previews (M2) fill in the body for shell and agent nodes by making `nodeBodyHeight`
 answer for those kinds too, and card sizes (M3) replace the constant cap with the node's own
 `Size`. Neither moves anything else about card geometry.
+
+## Update — M3, card attributes (#10)
+
+The deferral above is closed. `maxNoteLines` is gone, and the cap is the node's own `Size`
+looked up in `preview_lines`, which is the same number a session-backed card asks tmux for —
+one card size, one card height, whatever is in the body. Nothing else about the geometry
+moved: the map still draws every card at the height of the hungriest node on it.
+
+Two things fell out of it. A card now cuts its own body to its own size as well as being
+drawn at the map's shared height, so a small card standing beside a large one shows nothing
+rather than spending the room the large one asked for. And a note keeps one line at the
+smallest size where a shell card keeps none — a preview is a snapshot of output the session
+still has and peek reads in full, but a note's body is the node itself, and a blank card
+could not be told from a note with nothing written in it.
