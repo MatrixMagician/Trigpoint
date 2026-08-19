@@ -22,7 +22,7 @@ type attachedMsg struct{ err error }
 // installed for the duration hands it back.
 func (m Model) attach() (tea.Model, tea.Cmd) {
 	node, ok := m.selected()
-	if !ok || m.attaching {
+	if !ok || m.handingOff {
 		return m, nil
 	}
 	session := tmux.SessionName(m.ws.Name, node.ID)
@@ -60,7 +60,7 @@ func (m Model) attach() (tea.Model, tea.Cmd) {
 	// terminal only changes hands once Bubble Tea reaches the exec, and a
 	// second Enter landing in that gap would install a second binding for the
 	// first attach to release — leaving the second one with no way back.
-	m.attaching = true
+	m.handingOff = true
 	return m, tea.ExecProcess(handoff, onReturn(release, &stderr))
 }
 
@@ -70,14 +70,15 @@ func (m Model) attach() (tea.Model, tea.Cmd) {
 func onReturn(release func() error, stderr *strings.Builder) tea.ExecCallback {
 	return func(err error) tea.Msg {
 		unbound := release()
-		return attachedMsg{err: cmp.Or(attachErr(err, stderr.String()), unbound)}
+		return attachedMsg{err: cmp.Or(exitErr(err, stderr.String()), unbound)}
 	}
 }
 
-// attachErr is what to say about an attach that ended badly. tmux's own
+// exitErr is what to say about a program that ended badly — tmux on the way
+// back from an attach, $EDITOR on the way back from a note. The program's own
 // complaint is the useful half; an exit status on its own sends the user
 // hunting for what it meant.
-func attachErr(err error, stderr string) error {
+func exitErr(err error, stderr string) error {
 	if err == nil {
 		return nil
 	}

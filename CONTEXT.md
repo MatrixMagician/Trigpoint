@@ -88,6 +88,13 @@ The recent-output snapshot shown inside a card. Always a snapshot, never a live 
 the distinction is the whole v1 architecture.
 _Avoid_: output, tail, live view
 
+**Body**:
+The region of a card between its two borders, and what goes in it. A preview is what fills
+the body of a session-backed node; a note's markdown fills the body of a note. Every card on
+the map has a body of the same height — see
+[ADR 0003](docs/adr/0003-every-card-on-the-map-is-the-same-height.md).
+_Avoid_: content, contents, card text
+
 ## Sessions and liveness
 
 **Session**:

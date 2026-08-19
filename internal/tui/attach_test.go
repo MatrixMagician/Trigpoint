@@ -127,15 +127,15 @@ func TestReturningFromAttachLeavesTheMapAsItWas(t *testing.T) {
 
 func TestAttachErrorPrefersTmuxsOwnComplaint(t *testing.T) {
 	// An exit status on its own sends the user hunting.
-	if got := attachErr(errors.New("exit status 1"), "can't find session: trig_main_k4f2\n"); got == nil ||
+	if got := exitErr(errors.New("exit status 1"), "can't find session: trig_main_k4f2\n"); got == nil ||
 		!strings.Contains(got.Error(), "can't find session") {
-		t.Errorf("attachErr = %v, want tmux's own complaint", got)
+		t.Errorf("exitErr = %v, want tmux's own complaint", got)
 	}
-	if got := attachErr(errors.New("exit status 1"), "  "); got == nil || got.Error() != "exit status 1" {
-		t.Errorf("attachErr with nothing on stderr = %v, want the exit status", got)
+	if got := exitErr(errors.New("exit status 1"), "  "); got == nil || got.Error() != "exit status 1" {
+		t.Errorf("exitErr with nothing on stderr = %v, want the exit status", got)
 	}
-	if got := attachErr(nil, "some noise"); got != nil {
-		t.Errorf("attachErr on a clean exit = %v, want nil", got)
+	if got := exitErr(nil, "some noise"); got != nil {
+		t.Errorf("exitErr on a clean exit = %v, want nil", got)
 	}
 }
 
