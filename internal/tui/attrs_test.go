@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -437,24 +438,58 @@ func TestASmallNoteStillShowsALine(t *testing.T) {
 	}
 }
 
-// TestTheTitleOutranksTheTagsOnTheBorder is the rule a 22-cell card forces: two
-// labels want the same border, and the one that says which node this is wins.
-func TestTheTitleOutranksTheTagsOnTheBorder(t *testing.T) {
-	long := card(state.Node{
-		ID: "k4f2", Kind: state.KindShell, Title: "a-very-long-node-name", Tags: []string{"infra"},
-	}, false, false, false, 0, nil)
-	if !strings.Contains(long[0], "a-very-lo") {
-		t.Errorf("the title should keep the border it needs, got %q", long[0])
-	}
-	if strings.Contains(long[0], "#") {
-		t.Errorf("the tags should give way rather than shrink to nothing, got %q", long[0])
-	}
-
-	short := card(state.Node{
+// TestTagsSitOnTheBottomBorder is the rule a 22-cell card forces (ADR 0009):
+// the title has the top border to itself, and the tags go where the kind and
+// the age leave room for them.
+func TestTagsSitOnTheBottomBorder(t *testing.T) {
+	lines := card(state.Node{
 		ID: "k4f2", Kind: state.KindShell, Title: "api", Tags: []string{"infra"},
 	}, false, false, false, 0, nil)
-	if !strings.Contains(short[0], "#infra") || !strings.Contains(short[0], "api") {
-		t.Errorf("a short title leaves room for its tags, got %q", short[0])
+	top, bottom := lines[0], lines[len(lines)-1]
+
+	if strings.Contains(top, "#") {
+		t.Errorf("the top border is the title's alone, got %q", top)
+	}
+	if !strings.Contains(bottom, "#infra") {
+		t.Errorf("the bottom border should carry the tags, got %q", bottom)
+	}
+	if !strings.Contains(bottom, "sh") {
+		t.Errorf("the kind should still be on the bottom border, got %q", bottom)
+	}
+}
+
+// TestALongTitleNoLongerCostsTheTags is what moving them bought: the two labels
+// no longer compete for one border, so a node can be both named and tagged.
+func TestALongTitleNoLongerCostsTheTags(t *testing.T) {
+	lines := card(state.Node{
+		ID: "k4f2", Kind: state.KindShell, Title: "a-very-long-node-name", Tags: []string{"infra"},
+	}, false, false, false, 0, nil)
+
+	if !strings.Contains(lines[0], "a-very-long-n") {
+		t.Errorf("the title should have the whole top border, got %q", lines[0])
+	}
+	if !strings.Contains(lines[len(lines)-1], "#infra") {
+		t.Errorf("the tags should be unaffected by the title, got %q", lines[len(lines)-1])
+	}
+}
+
+// TestTheKindAndAgeOutrankTheTags keeps the fixed half of the bottom border
+// whole: a card that could not say what kind it is, or how old, would have
+// given up more than it gained.
+func TestTheKindAndAgeOutrankTheTags(t *testing.T) {
+	n := state.Node{
+		ID: "k4f2", Kind: state.KindShell, Title: "api",
+		Tags:      []string{"infrastructure", "on-call", "eu-west"},
+		CreatedAt: time.Now().Add(-3 * time.Hour),
+	}
+	bottom := card(n, false, false, false, 0, nil)
+	last := bottom[len(bottom)-1]
+
+	if !strings.Contains(last, "sh · 3h") {
+		t.Errorf("the kind and age should survive whatever the tags do, got %q", last)
+	}
+	if !strings.Contains(last, "…") {
+		t.Errorf("tags too long for the room left should be cut, not dropped, got %q", last)
 	}
 }
 

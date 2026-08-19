@@ -194,16 +194,22 @@ type Group struct {
 - Grid of node cards; viewport scrolls to follow the cursor. Card anatomy:
 
 ```
-╭─ ● api-server ──────── #infra ─╮
-│ $ tail -f /var/log/api.log     │
-│ 200 GET /health 3ms            │
-│ 200 GET /v2/items 41ms         │
-╰─ sh · 2h ──────────────────────╯
+╭─ ● api-server ─────╮
+│ $ tail -f /var/log │
+│ 200 GET /health 3… │
+│ 200 GET /v2/items… │
+╰─ sh · 2h ─ #infra ─╯
 ```
 
-  Top border: status dot (§8), title, tags. Body: preview lines (per `Size`). Bottom
-  border: kind, session age. Accent colour on the border. Dead nodes (state exists, tmux
+  Top border: status dot (§8), title. Body: preview lines (per `Size`). Bottom border:
+  kind, session age, tags. Accent colour on the border. Dead nodes (state exists, tmux
   session gone) render dimmed with a `✝ dead` badge.
+
+  Tags are on the bottom border and not beside the title: a card is 22 cells wide, which is
+  not enough for both, and the kind and the age leave room where the title does not. The
+  kind and the age never give way; the tags take what is left and are cut, or dropped, when
+  that runs out. See
+  [ADR 0009](docs/adr/0009-tags-live-on-the-bottom-border.md).
 
 - Groups render as a background-tinted rectangle with a title in its top border, beneath
   member cards.

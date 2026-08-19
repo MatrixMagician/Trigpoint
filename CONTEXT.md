@@ -55,7 +55,9 @@ _Avoid_: folder, cluster, tag group
 
 **Tag**:
 A label marking nodes that belong together regardless of where they sit. The logical
-counterpart to a group — tags cross the map freely, groups *are* the map.
+counterpart to a group — tags cross the map freely, groups *are* the map. On a card a tag is
+drawn on the bottom border, after the kind and the age; see
+[ADR 0009](docs/adr/0009-tags-live-on-the-bottom-border.md).
 _Avoid_: label, category, group (for a tag)
 
 ## Nodes

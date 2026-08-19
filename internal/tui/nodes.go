@@ -340,13 +340,15 @@ const (
 	// cardBodyWidth is the room inside a card's walls, once "│ " and " │" have
 	// taken theirs. It is the width the markdown renderer wraps to.
 	cardBodyWidth = cardWidth - 4
+	// footLead is the bottom border's left-hand corner and the space after it.
+	footLead = "╰─ "
 	// minTagWidth is the least a tag can be shown in and still say anything: a
 	// hash, a character or two of the tag, and the ellipsis that says there was
-	// more. Below it the top border carries the title alone.
+	// more. Below it the bottom border carries the kind and the age alone.
 	minTagWidth = 4
 	// tagOverhead is what the border spends around the tags — the space after
-	// the title, one rule, the space before the tags, the space after them, and
-	// the corner.
+	// the kind and age, one rule, the space before the tags, the space after
+	// them, and the corner.
 	tagOverhead = 6
 )
 
@@ -520,21 +522,23 @@ func card(n state.Node, selected, dead, unread bool, body int, content []string)
 	if !n.HasSession() {
 		lead, trail = "╭─ ", kindLabel(n.Kind)
 	}
-	// Tags sit at the right-hand end of the top border and take what the title
-	// leaves: a tag that squeezed a node's name down to an ellipsis would cost
-	// the card the one thing that says which node it is. Below a few cells
-	// there is no room to say anything, so the tags go rather than shrink.
-	title := truncate(n.Title, cardWidth-lipgloss.Width(lead)-3)
-	top := "─╮"
+	// Tags sit at the right-hand end of the *bottom* border, after the kind and
+	// the age, and take what those leave. The top border is the title's alone:
+	// a card is 22 cells wide, the two labels cannot both have one border, and
+	// the title is what says which node this is — see
+	// docs/adr/0009-tags-live-on-the-bottom-border.md. The kind and the age are
+	// the fixed half and never give way; below a few cells there is no room to
+	// say anything, so the tags go rather than shrink to a bare ellipsis.
+	foot := "─╯"
 	if tags := tagLabel(n.Tags); tags != "" {
-		spare := cardWidth - lipgloss.Width(lead) - lipgloss.Width(title) - tagOverhead
+		spare := cardWidth - lipgloss.Width(footLead) - lipgloss.Width(trail) - tagOverhead
 		if spare >= minTagWidth {
-			top = " " + truncate(tags, spare) + " ─╮"
+			foot = " " + truncate(tags, spare) + " ─╯"
 		}
 	}
 
 	lines := make([]string, 0, body+2)
-	lines = append(lines, style.Render(border(lead, title, top)))
+	lines = append(lines, style.Render(border(lead, n.Title, "─╮")))
 	for i := 0; i < body; i++ {
 		text := ""
 		if i < len(content) {
@@ -542,7 +546,7 @@ func card(n state.Node, selected, dead, unread bool, body int, content []string)
 		}
 		lines = append(lines, bodyLine(style, text))
 	}
-	return append(lines, style.Render(border("╰─ ", trail, "─╯")))
+	return append(lines, style.Render(border(footLead, trail, foot)))
 }
 
 // bodyLine is one line inside a card, padded with spaces rather than the rule
