@@ -307,22 +307,43 @@ On #27, or a new issue if it is a defect rather than a gap:
 - for anything to do with keys, the `cat -v` output from triage step 1
 - for raw-mode corruption, the `stty -a` output before running `stty sane`
 
-## Result
+## Results
+
+Add a row per run. Steps 1–10 all passing is a pass; anything else names the step.
+
+### 2026-08-19 — Trigpoint `1234b7b`
+
+Fedora 44, kernel 7.1.8, Wayland under KDE Plasma, tmux 3.7b, Go 1.26.2. Konsole 26.04.3
+and Ghostty 1.3.1-4.fc44. Default `detach_key` (`M-Escape`), no custom Konsole keytab, no
+KWin global shortcut on Alt+Escape.
 
 | Terminal | Direct | Inside tmux | Notes |
 | --- | --- | --- | --- |
-| Konsole (Wayland) | | | |
-| Ghostty (Wayland) | | | |
+| Konsole 26.04.3 (Wayland) | pass | pass | steps 1–10 |
+| Ghostty 1.3.1 (Wayland) | pass | pass | steps 1–10 |
 
-Record a run by filling the table in the release PR rather than committing it here.
+Reported by the maintainer running the steps by hand. Two of them were also reproduced
+mechanically while writing this file, on the same build:
+
+- **Step 7, nested** — after the detach key, the outer session still reads `attached=1`.
+  This is the ADR 0002 failure mode not happening: a plain `detach-client` would have
+  detached the outer client and dropped the user out of their own tmux.
+- **Step 10** — the node's session outlives `q`, and it is not merely left behind: relaunch
+  Trigpoint and the card is on the map, and `Enter` attaches to that same live session with
+  whatever was running in it still running.
+
+Nothing was raised against any step. One query — a `trig_*` session still listed by
+`tmux ls` after quitting — was step 10 passing rather than a defect (SPEC §5.2).
 
 ## Not yet covered
 
-SPEC §14 names kitty, alacritty, wezterm, foot, and Terminal.app. None has been run: the
-development machine has Konsole and Ghostty on Linux/Wayland only, and Terminal.app needs
-macOS, which M5 targets as a release platform (`darwin/arm64`). Konsole covers the Qt/KDE
-family and Ghostty the GPU-accelerated one, so the two are not redundant, but they are not
-the whole list either.
+SPEC §14 names kitty, alacritty, wezterm, foot, and Terminal.app. None of those five has
+been run — the development machine has Konsole and Ghostty on Linux/Wayland only, and
+Terminal.app needs macOS, which M5 targets as a release platform (`darwin/arm64`).
+
+Konsole covers the Qt/KDE family and Ghostty the GPU-accelerated one, so the pair that has
+been run is not redundant, but it is not the whole list either. Nothing has been run on
+macOS at all, and nothing outside Wayland.
 
 Tracked as #27, which blocks the release issue (#21). The handoff code is the same on every
 emulator, and what differs is exactly what only an emulator can show.
