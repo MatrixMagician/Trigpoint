@@ -497,3 +497,51 @@ func TestThePromptOutranksAStaleError(t *testing.T) {
 		t.Errorf("the title being typed should still be visible, got:\n%s", m.View())
 	}
 }
+
+// A node created while tmux is still thinking reserves a cell, but the map does
+// not stand still: shoving a node onto that cell must not end with two nodes
+// sharing it, because selected() and the card renderer would then disagree
+// about which of them x kills.
+func TestACreateLandingOnAShovedCellFindsAnotherCell(t *testing.T) {
+	ws := state.Workspace{Name: "main", Nodes: []state.Node{
+		{ID: "a", Kind: state.KindShell, Title: "a", Pos: state.Cell{}},
+	}}
+	m, _, _ := newNodeModel(t, ws)
+
+	m, cmd := typeKeys(t, m, "n")
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+
+	// The new node has reserved a cell; walk the existing node onto it before
+	// tmux confirms.
+	reserved := m.pending[0].Pos
+	for m.ws.Nodes[0].Pos != reserved {
+		step := state.Cell{Col: sign(reserved.Col - m.ws.Nodes[0].Pos.Col)}
+		if step.Col == 0 {
+			step = state.Cell{Row: sign(reserved.Row - m.ws.Nodes[0].Pos.Row)}
+		}
+		m = m.moveNode(step, 1)
+	}
+	m = settle(t, m, cmd)
+
+	seen := map[state.Cell]string{}
+	for _, n := range m.ws.Nodes {
+		if other, taken := seen[n.Pos]; taken {
+			t.Fatalf("nodes %q and %q both sit on %+v", other, n.ID, n.Pos)
+		}
+		seen[n.Pos] = n.ID
+	}
+	if _, ok := m.selected(); !ok {
+		t.Errorf("cursor at %+v is on no node after the create landed", m.ws.Viewport.Cursor)
+	}
+}
+
+func sign(n int) int {
+	switch {
+	case n > 0:
+		return 1
+	case n < 0:
+		return -1
+	}
+	return 0
+}

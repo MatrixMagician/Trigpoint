@@ -136,9 +136,15 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.status = msg.err.Error()
 			return m, nil, true
 		}
-		m.ws.Nodes = append(append([]state.Node(nil), m.ws.Nodes...), msg.node)
-		m.ws.Viewport.Cursor = msg.node.Pos
-		return m.save(), nil, true
+		// The cell was chosen when the node was created, and the map has been
+		// live ever since: a shove may have walked another node onto it. One
+		// node per cell is the map's only layout rule, so the cell is settled
+		// here, on arrival, rather than back when it was merely reserved.
+		node := msg.node
+		node.Pos = m.ws.NearestFreeCell(node.Pos)
+		m.ws.Nodes = append(append([]state.Node(nil), m.ws.Nodes...), node)
+		m.ws.Viewport.Cursor = node.Pos
+		return m.follow().save(), nil, true
 
 	case nodeKilledMsg:
 		if msg.err != nil {
@@ -242,19 +248,23 @@ func (m Model) cards() string {
 	return strings.Join(rows[:len(rows)-1], "\n")
 }
 
-// bounds is the rectangle of cells worth drawing: as many cells as the terminal
-// has room for, centred on the cursor. The rectangle is sized by the screen and
-// not by the map, because a node's position is read off disk and can be
-// arbitrarily far away — spanning to it would make a distant node an
+// bounds is the rectangle of cells worth drawing: the viewport offset, and as
+// many cells beyond it as the terminal has room for. The rectangle is sized by
+// the screen and not by the map, because a node's position is read off disk and
+// can be arbitrarily far away — spanning to it would make a distant node an
 // out-of-memory rather than something you scroll to.
 func (m Model) bounds() (min, max state.Cell) {
-	cols := maxInt((m.width+cellGap)/(cardWidth+cellGap), 1)
-	rows := maxInt((m.height-1+cellGap)/cardRows, 1)
-
-	cursor := m.ws.Viewport.Cursor
-	min = state.Cell{Col: cursor.Col - (cols-1)/2, Row: cursor.Row - (rows-1)/2}
+	cols, rows := m.viewCells()
+	min = m.ws.Viewport.Offset
 	max = state.Cell{Col: min.Col + cols - 1, Row: min.Row + rows - 1}
 	return min, max
+}
+
+// viewCells is how many cells of map the terminal has room for. Never zero:
+// there is always a cell under the cursor, however small the window.
+func (m Model) viewCells() (cols, rows int) {
+	return maxInt((m.width+cellGap)/(cardWidth+cellGap), 1),
+		maxInt((m.height-1+cellGap)/cardRows, 1)
 }
 
 // card is a node's rendering on the map: a border carrying its title above a
