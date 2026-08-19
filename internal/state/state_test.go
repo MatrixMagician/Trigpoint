@@ -195,3 +195,71 @@ func TestDirFallsBackToLocalState(t *testing.T) {
 		t.Errorf("Dir() = %q, want %q", got, want)
 	}
 }
+
+func TestNewNodeIDIsShortSessionSafeAndFreeOnThisMap(t *testing.T) {
+	ws := Workspace{Name: "main"}
+	for i := 0; i < 200; i++ {
+		id := ws.NewNodeID()
+		if id == "" || len(id) > 8 {
+			t.Fatalf("NewNodeID returned %q, which is not a short slug", id)
+		}
+		// The id is carried into the tmux session name, where "." and ":"
+		// address windows and panes.
+		if strings.ContainsAny(id, ".:_/ ") {
+			t.Fatalf("NewNodeID returned %q, which is not safe in a tmux session name", id)
+		}
+		for _, n := range ws.Nodes {
+			if n.ID == id {
+				t.Fatalf("NewNodeID returned %q, which is already on the map", id)
+			}
+		}
+		ws.Nodes = append(ws.Nodes, Node{ID: id})
+	}
+}
+
+func TestNearestFreeCellPrefersTheCursorItself(t *testing.T) {
+	ws := Workspace{Name: "main"}
+	if got := ws.NearestFreeCell(Cell{Col: 3, Row: 4}); got != (Cell{Col: 3, Row: 4}) {
+		t.Errorf("on an empty map the cursor's own cell is free, got %+v", got)
+	}
+}
+
+func TestNearestFreeCellStepsAsideWhenOccupied(t *testing.T) {
+	ws := Workspace{Name: "main", Nodes: []Node{{ID: "a", Pos: Cell{Col: 0, Row: 0}}}}
+	got := ws.NearestFreeCell(Cell{})
+
+	if got == (Cell{}) {
+		t.Fatal("the cursor's cell is taken; NearestFreeCell returned it anyway")
+	}
+	if d := max(abs(got.Col), abs(got.Row)); d != 1 {
+		t.Errorf("NearestFreeCell returned %+v, %d cells away when a neighbour was free", got, d)
+	}
+}
+
+func TestNearestFreeCellSkipsAFullRing(t *testing.T) {
+	ws := Workspace{Name: "main"}
+	for col := -1; col <= 1; col++ {
+		for row := -1; row <= 1; row++ {
+			ws.Nodes = append(ws.Nodes, Node{ID: "n", Pos: Cell{Col: col, Row: row}})
+		}
+	}
+	got := ws.NearestFreeCell(Cell{})
+
+	for _, n := range ws.Nodes {
+		if n.Pos == got {
+			t.Fatalf("NearestFreeCell returned occupied cell %+v", got)
+		}
+	}
+	if d := max(abs(got.Col), abs(got.Row)); d != 2 {
+		t.Errorf("NearestFreeCell returned %+v, %d cells away when the second ring was free", got, d)
+	}
+}
+
+func TestNearestFreeCellIgnoresTheCellsCoordinatesOfOtherWorkspaces(t *testing.T) {
+	// Placement is a pure function of this workspace's nodes: same map, same
+	// cursor, same answer, so a restart puts a node where the user expects.
+	ws := Workspace{Name: "main", Nodes: []Node{{ID: "a", Pos: Cell{}}}}
+	if first, second := ws.NearestFreeCell(Cell{}), ws.NearestFreeCell(Cell{}); first != second {
+		t.Errorf("NearestFreeCell is not deterministic: %+v then %+v", first, second)
+	}
+}
