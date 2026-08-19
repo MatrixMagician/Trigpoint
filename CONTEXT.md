@@ -113,6 +113,20 @@ alive, what is dead, and what exists in tmux with no node to explain it.
 A tmux session Trigpoint did not create, mapped onto the map as a node. Adoption renames
 nothing; the foreign session keeps its own name.
 
+**Handoff**:
+Giving the whole terminal to a node's session and taking it back on a keystroke. Trigpoint
+releases the terminal entirely rather than drawing the session inside itself — the handoff
+is why a node is the real thing and a preview is only a snapshot. One node is handed the
+terminal at a time; that is the v1 limit the map exists to make bearable.
+_Avoid_: open, launch, enter (as a noun), embed
+
+**Detach key**:
+The single keystroke that ends a handoff. It is a binding Trigpoint installs into tmux for
+the duration of the handoff and takes back on return, not a key Trigpoint reads itself —
+during a handoff Trigpoint is not reading anything. See
+docs/adr/0002-the-detach-binding-targets-the-session.md.
+_Avoid_: escape key, exit key
+
 ## Attention
 
 **Badge**:

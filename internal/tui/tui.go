@@ -46,6 +46,7 @@ type Model struct {
 	killing       string       // the node x was pressed on, held until y or n
 	count         string       // the count prefix typed so far, applied to the next motion
 	awaitZ        bool         // the first z of zz has been pressed
+	attaching     bool         // a handoff is under way, so Enter is spoken for
 }
 
 func New(cfg config.Config, ws state.Workspace, stateDir string, sessions Sessions) Model {
@@ -91,6 +92,8 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.String() {
+	case "enter":
+		return m.attach()
 	case "q":
 		if m.cfg.General.ConfirmQuit {
 			m.mode = modeConfirmQuit
@@ -157,7 +160,7 @@ func (m Model) statusBar() string {
 	}
 
 	left := fmt.Sprintf("%s · %s", m.ws.Name, pluralise(len(m.ws.Nodes), "node"))
-	right := "n new · x kill · q quit"
+	right := "⏎ attach · n new · x kill · q quit"
 	if m.count != "" {
 		right = m.count + " · " + right
 	}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -16,10 +17,15 @@ import (
 // fakeSessions stands in for tmux so the map view can be exercised without a
 // tmux server, and so a test can assert exactly what Trigpoint asked tmux to do.
 type fakeSessions struct {
-	created   []createCall
-	killed    []string
-	createErr error
-	killErr   error
+	created    []createCall
+	killed     []string
+	handoffs   []handoffCall
+	released   int
+	createErr  error
+	killErr    error
+	existsErr  error
+	handoffErr error
+	dead       bool // Exists reports the node's session as gone
 }
 
 type createCall struct {
@@ -34,6 +40,25 @@ func (f *fakeSessions) Create(session, dir string, env map[string]string) error 
 	}
 	f.created = append(f.created, createCall{session, dir, env})
 	return nil
+}
+
+type handoffCall struct {
+	session   string
+	detachKey string
+}
+
+func (f *fakeSessions) Exists(session string) (bool, error) {
+	return !f.dead, f.existsErr
+}
+
+func (f *fakeSessions) Handoff(session, detachKey string) (*exec.Cmd, func() error, error) {
+	if f.handoffErr != nil {
+		return nil, nil, f.handoffErr
+	}
+	f.handoffs = append(f.handoffs, handoffCall{session, detachKey})
+	// Never run by these tests: the map is asked what it did, not driven
+	// through a real Bubble Tea programme.
+	return exec.Command("true"), func() error { f.released++; return nil }, nil
 }
 
 func (f *fakeSessions) Kill(session string) error {

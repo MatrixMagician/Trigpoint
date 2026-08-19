@@ -2,8 +2,10 @@ package tmux
 
 import (
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSessionNameEncodesWorkspaceAndNode(t *testing.T) {
@@ -141,5 +143,158 @@ func TestKillingAnAbsentSessionSucceeds(t *testing.T) {
 	}
 	if err := (CLI{Socket: "trig-test-never-started"}).Kill(SessionName("main", "gone")); err != nil {
 		t.Errorf("killing a session with no tmux server running: %v", err)
+	}
+}
+
+func TestHandoffInstallsTheDetachBindingAndTakesItBackAgain(t *testing.T) {
+	c := testCLI(t)
+	name := SessionName("main", "k4f2")
+	if err := c.Create(name, t.TempDir(), nil); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	_, release, err := c.Handoff(name, "M-Escape")
+	if err != nil {
+		t.Fatalf("Handoff: %v", err)
+	}
+
+	bound := rootBindings(t, c)
+	if !strings.Contains(bound, "M-Escape") {
+		t.Errorf("the detach key should be bound while attached, got:\n%s", bound)
+	}
+	// The binding names the session rather than whoever pressed the key: with
+	// Trigpoint inside tmux the outer client sees the key first, and a plain
+	// detach-client would drop the user out of their own tmux.
+	if !strings.Contains(bound, "detach-client") || !strings.Contains(bound, name) {
+		t.Errorf("the detach binding should detach the node's session, got:\n%s", bound)
+	}
+
+	if err := release(); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if bound := rootBindings(t, c); strings.Contains(bound, "M-Escape") {
+		t.Errorf("the detach key should be unbound once back on the map, got:\n%s", bound)
+	}
+}
+
+func rootBindings(t *testing.T, c CLI) string {
+	t.Helper()
+	out, err := exec.Command("tmux", "-L", c.Socket, "list-keys", "-T", "root").Output()
+	if err != nil {
+		t.Fatalf("list-keys: %v", err)
+	}
+	return string(out)
+}
+
+func TestHandoffAttachDropsTMUXSoNestingIsNeverRefused(t *testing.T) {
+	c := testCLI(t)
+	name := SessionName("main", "k4f2")
+	if err := c.Create(name, t.TempDir(), nil); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Setenv("TMUX", "/tmp/tmux-1000/default,42,0")
+	t.Setenv("TMUX_PANE", "%7")
+
+	attach, _, err := c.Handoff(name, "M-Escape")
+	if err != nil {
+		t.Fatalf("Handoff: %v", err)
+	}
+	for _, v := range attach.Env {
+		if strings.HasPrefix(v, "TMUX=") || strings.HasPrefix(v, "TMUX_PANE=") {
+			t.Errorf("the attach child still carries %q, so tmux will refuse to nest", v)
+		}
+	}
+	if len(attach.Env) == 0 {
+		t.Error("the attach child was given no environment at all")
+	}
+}
+
+func TestHandoffRefusesWithNoDetachKey(t *testing.T) {
+	// Attaching with no way back would trap the user inside the session.
+	if _, _, err := (CLI{Socket: "trig-test-unused"}).Handoff(SessionName("main", "k4f2"), "  "); err == nil {
+		t.Error("Handoff should refuse to attach when no detach key is configured")
+	}
+}
+
+// TestTheDetachKeyReturnsFromANestedAttach runs the handoff the way Trigpoint
+// does it — from inside a tmux pane, which is the nesting case §5.1 says must
+// never be refused — and presses the detach key at it.
+func TestTheDetachKeyReturnsFromANestedAttach(t *testing.T) {
+	c := testCLI(t)
+	node := SessionName("main", "k4f2")
+	if err := c.Create(node, t.TempDir(), nil); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := exec.Command("tmux", "-L", c.Socket, "new-session", "-d", "-s", "outer").Run(); err != nil {
+		t.Fatalf("setting up the outer session: %v", err)
+	}
+
+	attach, release, err := c.Handoff(node, "M-Escape")
+	if err != nil {
+		t.Fatalf("Handoff: %v", err)
+	}
+	// The pane's own TMUX is what tmux would refuse the nesting over, so the
+	// child is run with exactly the environment Handoff prepared.
+	line := "env -u TMUX -u TMUX_PANE " + strings.Join(attach.Args, " ")
+	if err := exec.Command("tmux", "-L", c.Socket, "send-keys", "-t", "outer", line, "Enter").Run(); err != nil {
+		t.Fatalf("send-keys: %v", err)
+	}
+	waitForClients(t, c, node, 1, "the nested attach never took hold")
+
+	if err := exec.Command("tmux", "-L", c.Socket, "send-keys", "-t", "outer", "M-Escape").Run(); err != nil {
+		t.Fatalf("send-keys M-Escape: %v", err)
+	}
+	waitForClients(t, c, node, 0, "the detach key did not return from the attach")
+
+	if err := release(); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+}
+
+// waitForClients waits for session to have want clients attached. tmux does its
+// own work in its own time, so the count is polled rather than read once.
+func waitForClients(t *testing.T, c CLI, session string, want int, complaint string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	var got string
+	for time.Now().Before(deadline) {
+		out, err := exec.Command("tmux", "-L", c.Socket,
+			"list-sessions", "-F", "#{session_name} #{session_attached}").Output()
+		if err == nil {
+			got = ""
+			for _, line := range strings.Split(string(out), "\n") {
+				name, clients, _ := strings.Cut(strings.TrimSpace(line), " ")
+				if name == session {
+					got = clients
+				}
+			}
+			if got == strconv.Itoa(want) {
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("%s: %s has %q clients attached, want %d", complaint, session, got, want)
+}
+
+func TestReleasingTheDetachBindingSurvivesTheServerGoingAway(t *testing.T) {
+	// Typing `exit` in the last session takes the tmux server down with it, so
+	// a handoff ending in the most ordinary way possible finds nothing left to
+	// unbind. That is the outcome that was asked for, not a failure to report
+	// on the map the user has just come back to.
+	c := testCLI(t)
+	name := SessionName("main", "k4f2")
+	if err := c.Create(name, t.TempDir(), nil); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	_, release, err := c.Handoff(name, "M-Escape")
+	if err != nil {
+		t.Fatalf("Handoff: %v", err)
+	}
+	if err := exec.Command("tmux", "-L", c.Socket, "kill-server").Run(); err != nil {
+		t.Fatalf("kill-server: %v", err)
+	}
+	if err := release(); err != nil {
+		t.Errorf("release complained about a server that is already gone: %v", err)
 	}
 }
