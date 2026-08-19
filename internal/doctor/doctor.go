@@ -17,7 +17,8 @@ import (
 )
 
 // minTmux is the oldest tmux Trigpoint supports: control mode, `capture-pane -e`,
-// and session environment all have to be there.
+// session environment, and the `refresh-client -B` subscription the preview
+// monitor's activity events arrive on all have to be there.
 var minTmux = Version{Major: 3, Minor: 2}
 
 type Version struct{ Major, Minor int }

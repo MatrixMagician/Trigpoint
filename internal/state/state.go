@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Kind distinguishes what sits behind a node. Note nodes have no session at all,
@@ -117,6 +118,12 @@ func ValidName(name string) error {
 		// The name is carried into the tmux session name trig_<workspace>_<id>
 		// (SPEC §5.2), and tmux uses "." and ":" to address windows and panes.
 		return fmt.Errorf("workspace name %q may not contain %q or %q", name, ".", ":")
+	case strings.ContainsFunc(name, unicode.IsSpace):
+		// Same reason, one step further along: the session name is read back out
+		// of tmux's own output — `list-sessions`, and the activity subscription
+		// the preview monitor reads — where names are separated by whitespace
+		// and a name containing some cannot be told from two names.
+		return fmt.Errorf("workspace name %q may not contain whitespace", name)
 	}
 	for _, r := range name {
 		if r < 0x20 || r == 0x7f {

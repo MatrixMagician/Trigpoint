@@ -88,6 +88,12 @@ The recent-output snapshot shown inside a card. Always a snapshot, never a live 
 the distinction is the whole v1 architecture.
 _Avoid_: output, tail, live view
 
+**Dirty**:
+A card whose preview has been overtaken by output, and which is therefore owed a fresh
+capture on the next tick. A property of the snapshot, not of your attention — *unread* is
+the attention counterpart, and the two clear on entirely different things.
+_Avoid_: stale (that is an agent status), unread, changed
+
 **Body**:
 The region of a card between its two borders, and what goes in it. A preview is what fills
 the body of a session-backed node; a note's markdown fills the body of a note. Every card on
@@ -101,6 +107,15 @@ _Avoid_: content, contents, card text
 The tmux session behind a node. At most one per node, and Trigpoint's claim over it is a
 naming convention, not ownership — a session outlives Trigpoint and survives its exit.
 _Avoid_: process, terminal, shell (when the session is meant)
+
+**Monitor**:
+The single long-lived tmux control-mode client that says when something happened: a session
+appearing or disappearing, a session producing output. It reports *when* to look and never
+what was seen — a preview is read with `capture-pane`, never from the monitor. Losing it is
+ordinary rather than a failure, because it attaches to one of Trigpoint's own sessions and
+killing that node takes it with it. See
+[ADR 0005](docs/adr/0005-activity-arrives-as-a-format-subscription.md).
+_Avoid_: watcher, listener, event loop, control client (as the domain term)
 
 **Alive** / **Dead**:
 A node is alive when its session exists and dead when its state exists but the session is

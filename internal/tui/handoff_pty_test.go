@@ -199,14 +199,22 @@ func waitForClients(t *testing.T, cli tmux.CLI, session string, want int, compla
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
+		// Counted from the clients themselves rather than from
+		// #{session_attached}, which also counts the preview monitor: it is a
+		// control-mode client attached to one of Trigpoint's own sessions, and
+		// the question here is whether the user's terminal went across.
 		out, err := exec.Command("tmux", "-L", cli.Socket,
-			"list-sessions", "-F", "#{session_name} #{session_attached}").Output()
+			"list-clients", "-F", "#{client_session} #{client_flags}").Output()
 		if err == nil {
-			for _, line := range strings.Split(string(out), "\n") {
-				name, clients, _ := strings.Cut(strings.TrimSpace(line), " ")
-				if name == session && clients == fmt.Sprint(want) {
-					return
+			clients := 0
+			for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+				name, flags, _ := strings.Cut(strings.TrimSpace(line), " ")
+				if name == session && !strings.Contains(flags, "control-mode") {
+					clients++
 				}
+			}
+			if clients == want {
+				return
 			}
 		}
 		time.Sleep(50 * time.Millisecond)

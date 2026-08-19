@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -24,6 +25,12 @@ type Sessions interface {
 	// Handoff prepares an attach: the command that takes the terminal, and the
 	// release to run once it has given the terminal back.
 	Handoff(session, detachKey string) (*exec.Cmd, func() error, error)
+	// Capture is a snapshot of a session's recent output, with its colour, for
+	// the card's preview. Never a live terminal — see CONTEXT.md, "Preview".
+	Capture(session string, lines int) (string, error)
+	// Watch is the push side: what tmux says about sessions and activity, for
+	// as long as ctx runs.
+	Watch(ctx context.Context) <-chan tmux.Event
 }
 
 // maxTitleLen keeps a title inside a card and inside a sensible status line.
@@ -134,7 +141,7 @@ func (m Model) updateConfirmKill(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Removing the node is the whole operation — there is no session
 			// behind it to ask tmux about, let alone kill.
 			m.ws.Nodes = without(m.ws.Nodes, id)
-			return m.save(), nil
+			return m.forget(id).save(), nil
 		}
 		sessions, workspace := m.sessions, m.ws.Name
 		return m, func() tea.Msg {
@@ -161,16 +168,20 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// here, on arrival, rather than back when it was merely reserved.
 		node := msg.node
 		node.Pos = m.ws.NearestFreeCell(node.Pos)
-		return m.place(node).save(), nil, true
+		next, cmd := m.place(node).save().markDirty(node.ID)
+		return next, cmd, true
 
 	case attachedMsg:
-		// Bubble Tea repaints the map itself on taking the terminal back, so
-		// there is nothing to do here but report.
 		m.handingOff = false
 		if msg.err != nil {
 			m.status = msg.err.Error()
 		}
-		return m, nil, true
+		// Whatever happened inside the session happened with the map's back
+		// turned, so every card on screen is a snapshot of before the attach.
+		// Bubble Tea repaints on taking the terminal back; this is what it has
+		// to repaint with.
+		next, cmd := m.refreshNow()
+		return next, cmd, true
 
 	case noteEditedMsg:
 		m.handingOff = false
@@ -200,7 +211,7 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			return m, nil, true
 		}
 		m.ws.Nodes = without(m.ws.Nodes, msg.id)
-		return m.save(), nil, true
+		return m.forget(msg.id).save(), nil, true
 	}
 	return m, nil, false
 }
@@ -294,23 +305,23 @@ func (m Model) cardRows() int {
 }
 
 // bodyHeight is how many body lines every card shows, which is as many as the
-// hungriest node on the map asks for. Only notes have a body to show in M1;
-// live previews are what fills this in for the other kinds (M2, §5.3).
+// hungriest node on the map asks for.
 func (m Model) bodyHeight() int {
 	height := 0
 	for _, n := range m.ws.Nodes {
-		height = maxInt(height, nodeBodyHeight(n))
+		height = maxInt(height, m.nodeBodyHeight(n))
 	}
 	return height
 }
 
-// nodeBodyHeight is the lines one node would like: what it has to show, capped
-// so that one long note cannot cost the whole map its screen. Only notes have a
-// body to show in M1 — live previews are what fills this in for the other kinds
-// (M2, §5.3).
-func nodeBodyHeight(n state.Node) int {
-	if n.Kind != state.KindNote {
-		return 0
+// nodeBodyHeight is the lines one node would like. A session-backed node asks
+// for its preview line count, whether or not a snapshot has been taken yet — a
+// card that grew a body the moment its first output landed would move every
+// other card on the map with it. A note asks for what it has to show, capped so
+// that one long note cannot cost the whole map its screen.
+func (m Model) nodeBodyHeight(n state.Node) int {
+	if n.HasSession() {
+		return m.previewHeight(n)
 	}
 	if got := len(noteLines(n.Note)); got < maxNoteLines {
 		return got
@@ -343,7 +354,7 @@ func (m Model) cards() string {
 			node, ok := at[cell]
 			drawn := []string(nil)
 			if ok {
-				drawn = card(node, cell == m.ws.Viewport.Cursor, body)
+				drawn = card(node, cell == m.ws.Viewport.Cursor, body, m.bodyOf(node))
 			}
 			for i := range lines {
 				if col > minCell.Col {
@@ -383,10 +394,19 @@ func (m Model) viewCells() (cols, rows int) {
 		maxInt((m.height-1+cellGap)/m.cardRows(), 1)
 }
 
-// card is a node's rendering on the map: a border carrying its title, body lines
-// beneath it, and a border carrying its kind and age. Cards are never persisted;
-// nodes are.
-func card(n state.Node, selected bool, body int) []string {
+// bodyOf is what fills a node's card: the preview last captured for a session,
+// the rendered markdown for a note.
+func (m Model) bodyOf(n state.Node) []string {
+	if n.HasSession() {
+		return m.previews[n.ID]
+	}
+	return noteLines(n.Note)
+}
+
+// card is a node's rendering on the map: a border carrying its title, the body
+// lines beneath it, and a border carrying its kind and age. Cards are never
+// persisted; nodes are.
+func card(n state.Node, selected bool, body int, content []string) []string {
 	style := cardStyle
 	if selected {
 		style = selectedStyle
@@ -401,7 +421,6 @@ func card(n state.Node, selected bool, body int) []string {
 
 	lines := make([]string, 0, body+2)
 	lines = append(lines, style.Render(border(lead, n.Title, "─╮")))
-	content := noteLines(n.Note)
 	for i := 0; i < body; i++ {
 		text := ""
 		if i < len(content) {
@@ -430,6 +449,14 @@ func bodyLine(style lipgloss.Style, text string) string {
 		// the renderer emits none and a bare reset would be the only escape
 		// sequence in the whole frame.
 		text += "\x1b[0m"
+		if strings.Contains(text, "\x1b]8;;") {
+			// And any hyperlink, which a colour reset does not close.
+			// capture-pane emits OSC 8 for a pane that printed one, and
+			// glamour emits it for a link in a note; either left open makes
+			// the rest of the map clickable. Closing what is already closed
+			// costs a no-op.
+			text += "\x1b]8;;\x1b\\"
+		}
 	}
 	return style.Render("│ ") + text + pad + style.Render(" │")
 }

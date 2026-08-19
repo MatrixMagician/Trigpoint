@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"os/exec"
 	"strings"
@@ -20,13 +21,34 @@ type fakeSessions struct {
 	created    []createCall
 	killed     []string
 	handoffs   []handoffCall
+	captured   []captureCall
+	events     chan tmux.Event
+	output     map[string]string // what Capture hands back, by session
 	released   int
 	createErr  error
 	killErr    error
 	existsErr  error
 	handoffErr error
+	captureErr error
 	dead       bool // Exists reports the node's session as gone
 }
+
+type captureCall struct {
+	session string
+	lines   int
+}
+
+func (f *fakeSessions) Capture(session string, lines int) (string, error) {
+	if f.captureErr != nil {
+		return "", f.captureErr
+	}
+	f.captured = append(f.captured, captureCall{session, lines})
+	return f.output[session], nil
+}
+
+// Watch hands back a stream the test drives by hand, or none at all — a nil
+// stream is a map nobody is pushing events at, which is most of these tests.
+func (f *fakeSessions) Watch(context.Context) <-chan tmux.Event { return f.events }
 
 type createCall struct {
 	session string
@@ -433,7 +455,7 @@ func TestCardGeometrySurvivesWideRunes(t *testing.T) {
 	} {
 		// The title is used as the body too, so the body lines are held to the
 		// same width as the borders.
-		for _, line := range card(state.Node{Kind: state.KindNote, Title: title, Note: title}, false, 2) {
+		for _, line := range card(state.Node{Kind: state.KindNote, Title: title, Note: title}, false, 2, noteLines(title)) {
 			if w := lipgloss.Width(line); w != cardWidth {
 				t.Errorf("a card line of %q is %d cells wide, want %d: %q", title, w, cardWidth, line)
 			}
