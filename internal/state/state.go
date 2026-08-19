@@ -305,3 +305,55 @@ func abs(n int) int {
 	}
 	return n
 }
+
+// Shift returns the nodes with those named by ids moved one step of d, and with
+// anything standing in their way shoved the same step. It is the map's only
+// collision rule: node movement passes one id, group movement will pass the
+// members of the group, and both get the same behaviour because it is the same
+// code — there is deliberately no variant that refuses the move instead.
+//
+// The original nodes are left untouched: a Model is copied by value all over
+// Bubble Tea, and moving in place would edit the map every older copy holds.
+func (ws Workspace) Shift(ids []string, d Cell) []Node {
+	moving := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		moving[id] = true
+	}
+	// A cell holds one node, but the file on disk is a file: two nodes stacked
+	// by a hand edit both have to be recruited, or a shove can never separate
+	// them again.
+	at := make(map[Cell][]string, len(ws.Nodes))
+	for _, n := range ws.Nodes {
+		at[n.Pos] = append(at[n.Pos], n.ID)
+	}
+
+	// Whoever stands where a mover is going joins the move, and so does whoever
+	// stands in *their* way, until the line ahead has somewhere to go. The map is
+	// infinite, so it always does, and each pass recruits at least one node or is
+	// the last — so this terminates on the node count.
+	// ponytail: O(n²) on a shove that cascades across the whole map; fine at the
+	// map sizes a person can navigate by hand.
+	for grew := true; grew; {
+		grew = false
+		for _, n := range ws.Nodes {
+			if !moving[n.ID] {
+				continue
+			}
+			for _, id := range at[Cell{Col: n.Pos.Col + d.Col, Row: n.Pos.Row + d.Row}] {
+				if !moving[id] {
+					moving[id] = true
+					grew = true
+				}
+			}
+		}
+	}
+
+	moved := make([]Node, len(ws.Nodes))
+	copy(moved, ws.Nodes)
+	for i := range moved {
+		if moving[moved[i].ID] {
+			moved[i].Pos = Cell{Col: moved[i].Pos.Col + d.Col, Row: moved[i].Pos.Row + d.Row}
+		}
+	}
+	return moved
+}

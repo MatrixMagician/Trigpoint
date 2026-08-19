@@ -44,6 +44,8 @@ type Model struct {
 	status        string       // the last failure, shown until the next action
 	pending       []state.Node // nodes whose sessions tmux has not confirmed yet
 	killing       string       // the node x was pressed on, held until y or n
+	count         string       // the count prefix typed so far, applied to the next motion
+	awaitZ        bool         // the first z of zz has been pressed
 }
 
 func New(cfg config.Config, ws state.Workspace, stateDir string, sessions Sessions) Model {
@@ -59,7 +61,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		return m, nil
+		// A shrunk terminal can leave the cursor outside the viewport, and a
+		// cursor you cannot see is a node you are about to move blind.
+		return m.follow(), nil
 
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC {
@@ -80,6 +84,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.status = ""
+	// motion is asked first and its model kept either way: a key it does not
+	// take is still a key that ends a half-typed count.
+	m, handled := m.motion(msg.String())
+	if handled {
+		return m, nil
+	}
 	switch msg.String() {
 	case "q":
 		if m.cfg.General.ConfirmQuit {
@@ -148,6 +158,9 @@ func (m Model) statusBar() string {
 
 	left := fmt.Sprintf("%s · %s", m.ws.Name, pluralise(len(m.ws.Nodes), "node"))
 	right := "n new · x kill · q quit"
+	if m.count != "" {
+		right = m.count + " · " + right
+	}
 
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - barPadding
 	if gap < 1 {

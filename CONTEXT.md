@@ -27,6 +27,25 @@ view is what you are currently looking at it through.
 The unit of position on the map. Positions are always cell coordinates, never pixels or
 character offsets — this is what makes directional keyboard movement deterministic.
 
+**Cursor**:
+The cell you are pointing at. It is a position on the map, not a node — the node under it,
+if there is one, is the selection. The motion keys hop it from node to node, so an empty
+cell under the cursor is something left behind (a killed node, a fresh map), not somewhere
+you steer to.
+_Avoid_: selection (for the cursor itself), focus, pointer
+
+**Viewport**:
+The window of cells the map view is currently showing. It follows the cursor and is
+remembered with the workspace, so reopening Trigpoint puts you back where you were looking.
+_Avoid_: camera, scroll, screen
+
+**Shove**:
+What a move does to whatever stands in its way: the occupant is pushed on by the same step,
+and so is whoever stands behind it. There is exactly one collision rule on the map — node
+movement and group movement are the same rule with a different set of movers, never a
+variant that refuses the move. See docs/adr/0001-groups-are-spatial.md.
+_Avoid_: push, swap, displace, collision handling
+
 **Group**:
 A named, coloured rectangular region of the map that contains the nodes sitting inside it,
 and moves as a rigid container — carrying its contents, shoving anything in its path.

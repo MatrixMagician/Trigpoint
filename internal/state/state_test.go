@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -261,5 +262,100 @@ func TestNearestFreeCellIgnoresTheCellsCoordinatesOfOtherWorkspaces(t *testing.T
 	ws := Workspace{Name: "main", Nodes: []Node{{ID: "a", Pos: Cell{}}}}
 	if first, second := ws.NearestFreeCell(Cell{}), ws.NearestFreeCell(Cell{}); first != second {
 		t.Errorf("NearestFreeCell is not deterministic: %+v then %+v", first, second)
+	}
+}
+
+func nodesAt(cells ...Cell) []Node {
+	nodes := make([]Node, len(cells))
+	for i, c := range cells {
+		nodes[i] = Node{ID: fmt.Sprintf("n%d", i), Kind: KindShell, Pos: c}
+	}
+	return nodes
+}
+
+func posOf(nodes []Node, id string) Cell {
+	for _, n := range nodes {
+		if n.ID == id {
+			return n.Pos
+		}
+	}
+	return Cell{Col: -9999, Row: -9999}
+}
+
+func TestShiftMovesIntoAFreeCell(t *testing.T) {
+	ws := Workspace{Nodes: nodesAt(Cell{Col: 0, Row: 0})}
+
+	moved := ws.Shift([]string{"n0"}, Cell{Col: 1})
+
+	if got := posOf(moved, "n0"); got != (Cell{Col: 1}) {
+		t.Errorf("node moved to %+v, want one cell right", got)
+	}
+}
+
+func TestShiftShovesTheOccupantOutOfTheWay(t *testing.T) {
+	ws := Workspace{Nodes: nodesAt(Cell{Col: 0, Row: 0}, Cell{Col: 1, Row: 0})}
+
+	moved := ws.Shift([]string{"n0"}, Cell{Col: 1})
+
+	if got := posOf(moved, "n0"); got != (Cell{Col: 1}) {
+		t.Errorf("mover ended at %+v, want the occupied cell it pushed into", got)
+	}
+	if got := posOf(moved, "n1"); got != (Cell{Col: 2}) {
+		t.Errorf("occupant ended at %+v, want to be shoved on by the same step", got)
+	}
+}
+
+func TestShiftCascadesThroughARowOfNodes(t *testing.T) {
+	ws := Workspace{Nodes: nodesAt(
+		Cell{Col: 0, Row: 0}, Cell{Col: 0, Row: 1}, Cell{Col: 0, Row: 2}, Cell{Col: 0, Row: 4},
+	)}
+
+	moved := ws.Shift([]string{"n0"}, Cell{Row: 1})
+
+	for id, want := range map[string]Cell{
+		"n0": {Row: 1}, "n1": {Row: 2}, "n2": {Row: 3}, "n3": {Row: 4},
+	} {
+		if got := posOf(moved, id); got != want {
+			t.Errorf("%s ended at %+v, want %+v", id, got, want)
+		}
+	}
+}
+
+// A group moves as one, so the rule has to take a set: the members shift
+// together and only non-members are shoved, or a group would eat a bystander.
+func TestShiftMovesASetTogetherAndShovesOnlyOutsiders(t *testing.T) {
+	ws := Workspace{Nodes: nodesAt(Cell{Col: 0}, Cell{Col: 1}, Cell{Col: 2})}
+
+	moved := ws.Shift([]string{"n0", "n1"}, Cell{Col: 1})
+
+	for id, want := range map[string]Cell{"n0": {Col: 1}, "n1": {Col: 2}, "n2": {Col: 3}} {
+		if got := posOf(moved, id); got != want {
+			t.Errorf("%s ended at %+v, want %+v", id, got, want)
+		}
+	}
+}
+
+func TestShiftLeavesTheOriginalNodesAlone(t *testing.T) {
+	ws := Workspace{Nodes: nodesAt(Cell{Col: 0}, Cell{Col: 1})}
+
+	ws.Shift([]string{"n0"}, Cell{Col: 1})
+
+	if got := posOf(ws.Nodes, "n0"); got != (Cell{Col: 0}) {
+		t.Errorf("the workspace's own nodes moved to %+v; every Model copy shares that slice", got)
+	}
+}
+
+// A workspace file is a file, and a hand-edited one can stack two nodes on a
+// cell. Shoving that cell must take both of them, or the pair is stuck on top
+// of each other for good.
+func TestShiftUnstacksNodesThatShareACell(t *testing.T) {
+	ws := Workspace{Nodes: nodesAt(Cell{Col: 0}, Cell{Col: 1}, Cell{Col: 1})}
+
+	moved := ws.Shift([]string{"n0"}, Cell{Col: 1})
+
+	for id, want := range map[string]Cell{"n0": {Col: 1}, "n1": {Col: 2}, "n2": {Col: 2}} {
+		if got := posOf(moved, id); got != want {
+			t.Errorf("%s ended at %+v, want %+v", id, got, want)
+		}
 	}
 }
