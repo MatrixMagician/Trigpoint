@@ -9,15 +9,15 @@ and the attachment. Quitting Trigpoint kills nothing — every session outlives 
 ## Status
 
 Early. The map, its cursor, shell nodes, note cards, the attach handoff, live previews, peek,
-adopting sessions you already had, and the four card attributes — name, colour, tags, size —
-work; the rest of the spec does not exist yet.
+adopting sessions you already had, the four card attributes — name, colour, tags, size — and
+several workspaces to switch between work; the rest of the spec does not exist yet.
 
 | Milestone | | |
 | --- | --- | --- |
 | M0 | Skeleton — config, workspace store, `trig doctor` | done |
 | M1 | Nodes on a map — create/kill shell nodes, cursor and node movement, attach handoff | done |
 | M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | done |
-| M3 | Organisation — colours, tags, sizes, groups, filter, palette | in progress (groups, filter, palette to come) |
+| M3 | Organisation — colours, tags, sizes, workspaces, groups, filter, palette | in progress (groups, filter, palette to come) |
 | M4 | Agents — agent nodes, status badges, attention jump | to do |
 | M5 | Polish and release | to do |
 
@@ -84,6 +84,8 @@ What is bound today:
 | `s` | Cycle its card size, small → medium → large |
 | `A` | Adopt a tmux session Trigpoint did not create — `j`/`k` to choose, `Enter` to adopt |
 | `x` | Kill the node under the cursor and its session (asks first; a note or a dead node is just removed) |
+| `Tab` / `Shift-Tab` | Next / previous workspace, in name order |
+| `w` | Workspace picker — `j`/`k` to choose, `Enter` to open, `n` new, `x` delete |
 | `q` / `Ctrl-C` | Quit — sessions keep running |
 
 `Enter` hands the entire terminal to that node's tmux session, so TUI apps, 256-colour
@@ -149,6 +151,27 @@ whatever is behind it too: one collision rule, which groups will reuse unchanged
 
 The cursor position and the viewport are saved with the workspace, so reopening Trigpoint
 puts you back where you were looking.
+
+## Workspaces
+
+More than one map. `Tab` and `Shift-Tab` step through the workspaces in name order, and `w`
+opens a picker on the one you are in — `Enter` opens the one under it, `n` makes a new one,
+`x` deletes it. `trig -w <name>` opens straight into one, making it if it is not there yet.
+
+Switching changes everything on screen, because workspaces share nothing: their own nodes,
+their own groups, their own default working directory for new nodes. Each keeps its own cursor
+and viewport too, so switching away and back returns you to what you were looking at rather
+than to the origin — across restarts as well, since leaving a workspace writes it.
+
+Deleting a workspace deletes the file and nothing else. The tmux sessions its nodes named go
+on running: Trigpoint kills nothing it did not start, so its `x` says so before it does it,
+and `trig -w <name>` on the same name gets the cards back through reconciliation. The last
+workspace cannot be deleted — there would be no map to be on.
+
+The workspace on screen is read from its file on every switch rather than held in memory
+alongside the others. See
+[ADR 0010](docs/adr/0010-a-workspace-switch-is-a-reload.md) for what that buys and what it
+drops.
 
 ## Dead nodes and reconciliation
 

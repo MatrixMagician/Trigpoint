@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -108,9 +109,10 @@ type Workspace struct {
 	Viewport Viewport `json:"viewport"`
 }
 
-// maxNameLen keeps a workspace name comfortably inside every filesystem's limit
-// once ".json" and a temp-file suffix are appended.
-const maxNameLen = 64
+// MaxNameLen keeps a workspace name comfortably inside every filesystem's limit
+// once ".json" and a temp-file suffix are appended. It is exported because the
+// prompt that collects a name bounds what can be typed by it.
+const MaxNameLen = 64
 
 // ValidName reports whether name is safe to use as a workspace file name. Names
 // arrive from the command line, so this is a trust boundary: anything that could
@@ -119,8 +121,8 @@ func ValidName(name string) error {
 	switch {
 	case name == "":
 		return errors.New("workspace name is empty")
-	case len(name) > maxNameLen:
-		return fmt.Errorf("workspace name is longer than %d characters", maxNameLen)
+	case len(name) > MaxNameLen:
+		return fmt.Errorf("workspace name is longer than %d characters", MaxNameLen)
 	case name == "." || name == "..":
 		return fmt.Errorf("workspace name %q is reserved", name)
 	case strings.ContainsAny(name, `/\`+"\x00"):
@@ -217,6 +219,51 @@ func Save(dir string, ws Workspace) error {
 	// ponytail: two fsyncs per mutation; debounce saves if writes at cursor rate
 	// ever hurt.
 	return syncDir(dir)
+}
+
+// List names every workspace in dir, sorted, so that cycling with Tab visits
+// them in the same order on every run. A state directory that does not exist yet
+// holds no workspaces, which is not a failure to read it.
+//
+// A file that is not a workspace is not one: an orphaned ".tmp" from an
+// interrupted save, and anything whose name Save would have refused to write,
+// are skipped rather than offered as maps that cannot be opened.
+func List(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading the state directory: %w", err)
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok || ValidName(name) != nil {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// Remove deletes a workspace. Only the file: the sessions its nodes named go on
+// running, because Trigpoint does not own them and never kills what it did not
+// start (SPEC §5.2). A workspace that is already gone is the outcome asked for
+// rather than an error.
+func Remove(dir, name string) error {
+	file, err := path(dir, name)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("deleting workspace %q: %w", name, err)
+	}
+	return nil
 }
 
 func syncDir(dir string) error {

@@ -37,7 +37,10 @@ type captureDueMsg struct{}
 type refreshTickMsg struct{}
 
 // capturedMsg carries a batch of snapshots back from tmux.
-type capturedMsg struct{ previews map[string][]string }
+type capturedMsg struct {
+	mapStamp
+	previews map[string][]string
+}
 
 // listen waits for the next event. A nil stream is a map that was never given
 // one — tests drive the model by hand — and waiting on it would wait forever.
@@ -68,6 +71,11 @@ func (m Model) updatePreview(msg tea.Msg) (Model, tea.Cmd, bool) {
 		return next, cmd, true
 
 	case capturedMsg:
+		if !msg.about(m) {
+			// Snapshots of another map's sessions, keyed by ids that mean
+			// something else here.
+			return m, nil, true
+		}
 		return m.withPreviews(msg.previews), nil, true
 
 	case refreshTickMsg:
@@ -169,7 +177,7 @@ func (m Model) capture() (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	sessions := m.sessions
+	sessions, stamp := m.sessions, m.stamp()
 	// ponytail: one `tmux capture-pane` process per card. Measured at ~1.3 ms
 	// each, so a viewport of forty costs ~55 ms per tick, and the cost is the
 	// process rather than the lines it returns. If that ever shows, the forty
@@ -188,7 +196,7 @@ func (m Model) capture() (Model, tea.Cmd) {
 			}
 			previews[w.id] = previewBody(text, w.lines)
 		}
-		return capturedMsg{previews: previews}
+		return capturedMsg{mapStamp: stamp, previews: previews}
 	}
 }
 

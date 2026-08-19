@@ -50,6 +50,7 @@ type nodeCreatedMsg struct {
 }
 
 type nodeKilledMsg struct {
+	mapStamp
 	id  string
 	err error
 }
@@ -176,10 +177,10 @@ func (m Model) updateConfirmKill(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// An adopted node kills the foreign session it was adopted from: the
 		// card is over a real session, and the confirmation it took to get here
 		// is the same one every other node's kill takes (§9.3).
-		sessions, session := m.sessions, m.sessionOf(node)
+		sessions, session, stamp := m.sessions, m.sessionOf(node), m.stamp()
 		return m, func() tea.Msg {
 			err := sessions.Kill(session)
-			return nodeKilledMsg{id: id, err: err}
+			return nodeKilledMsg{mapStamp: stamp, id: id, err: err}
 		}
 	case "n", "N", "esc", "q":
 		m.mode, m.killing = modeNormal, ""
@@ -190,6 +191,12 @@ func (m Model) updateConfirmKill(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case nodeCreatedMsg:
+		if !pending(m.pending, msg.node.ID) {
+			// Nothing on this map is waiting for this node: the workspace it was
+			// created in has been switched away from, and its nodes went with
+			// it. Placing it here would put another map's card on this one.
+			return m, nil, true
+		}
 		m.pending = without(m.pending, msg.node.ID)
 		if msg.err != nil {
 			m.status = msg.err.Error()
@@ -236,6 +243,9 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return m.withNode(msg.id, func(n *state.Node) { n.Note = msg.body }).save(), nil, true
 
 	case respawnedMsg:
+		if !msg.about(m) {
+			return m, nil, true
+		}
 		if msg.err != nil {
 			// The node is exactly as dead as it was, and now the map says why.
 			m.status = msg.err.Error()
@@ -248,6 +258,13 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return m.openAdoption(msg), nil, true
 
 	case nodeKilledMsg:
+		if !msg.about(m) {
+			// The map that killed it has been switched away from. The session is
+			// gone either way, so its card goes dead on that map at its next
+			// reconciliation pass and x removes it — better than taking a card
+			// off this map because it happens to share the id.
+			return m, nil, true
+		}
 		if msg.err != nil {
 			m.status = msg.err.Error()
 			return m, nil, true

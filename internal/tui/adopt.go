@@ -115,9 +115,9 @@ func (m Model) updateAdopt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.choice = (m.choice + len(m.candidates) - 1) % len(m.candidates)
 	case "enter":
 		session := m.candidates[m.choice]
-		return m.closeAdoption().adopt(session)
+		return m.closePicker().adopt(session)
 	case "esc", "q":
-		return m.closeAdoption(), nil
+		return m.closePicker(), nil
 	}
 	return m, nil
 }

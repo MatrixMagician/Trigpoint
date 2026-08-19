@@ -374,3 +374,81 @@ func TestValidNameRejectsWhitespace(t *testing.T) {
 		t.Errorf("ValidName(%q) should still be fine: %v", "my-ws_2", err)
 	}
 }
+
+func TestListNamesEveryWorkspaceOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"work", "main", "scratch"} {
+		if err := Save(dir, Workspace{Name: name}); err != nil {
+			t.Fatalf("Save(%q): %v", name, err)
+		}
+	}
+	// Whatever else is in the directory is not a workspace: an orphaned temp
+	// file from an interrupted save, and a file whose name Trigpoint would
+	// never have written.
+	for _, other := range []string{"main.4f2.tmp", "notes.md", "bad name.json"} {
+		if err := os.WriteFile(filepath.Join(dir, other), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	names, err := List(dir)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if got, want := strings.Join(names, ","), "main,scratch,work"; got != want {
+		t.Errorf("List = %q, want %q — sorted, and workspace files only", got, want)
+	}
+}
+
+// A first run has no state directory at all, and having no workspaces yet is
+// not a failure to list them.
+func TestListOfAMissingDirectoryIsEmpty(t *testing.T) {
+	names, err := List(filepath.Join(t.TempDir(), "never-made"))
+	if err != nil {
+		t.Fatalf("List of a missing directory should not fail: %v", err)
+	}
+	if len(names) != 0 {
+		t.Errorf("List = %v, want nothing", names)
+	}
+}
+
+func TestRemoveDeletesTheWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	if err := Save(dir, Workspace{Name: "scratch", Nodes: []Node{{ID: "k4f2"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Remove(dir, "scratch"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	names, err := List(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 0 {
+		t.Errorf("the workspace is still listed after Remove: %v", names)
+	}
+	// Removing what is not there is the outcome that was asked for: two clients
+	// deleting the same workspace must not turn the second into an error.
+	if err := Remove(dir, "scratch"); err != nil {
+		t.Errorf("Remove of a workspace that is already gone: %v", err)
+	}
+}
+
+// Remove takes a name from the same place Load does, so it holds the same
+// boundary: a name that could reach outside the state directory is refused
+// rather than obeyed.
+func TestRemoveRefusesANameThatEscapesTheDirectory(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "keep.json")
+	if err := os.WriteFile(victim, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Remove(dir, "../keep"); err == nil {
+		t.Error("Remove should refuse a name containing a path separator")
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Errorf("Remove followed the path out of the state directory: %v", err)
+	}
+}

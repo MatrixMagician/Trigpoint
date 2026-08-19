@@ -21,6 +21,7 @@ import (
 // reconciledMsg is one pass's answer: which nodes have no session left, and
 // which sessions have no node yet.
 type reconciledMsg struct {
+	mapStamp
 	dead    map[string]bool
 	orphans []state.Node
 	err     error
@@ -60,13 +61,13 @@ func (m Model) reconcile() tea.Cmd {
 		}
 	}
 
-	sessions, workspace, at := m.sessions, m.ws.Name, m.corrections
+	sessions, workspace, at, stamp := m.sessions, m.ws.Name, m.corrections, m.stamp()
 	return func() tea.Msg {
 		names, err := sessions.List()
 		if err != nil {
 			// The map is left exactly as it was. A pass that could not ask must
 			// not condemn every node on the strength of not knowing.
-			return reconciledMsg{err: err, at: at}
+			return reconciledMsg{mapStamp: stamp, err: err, at: at}
 		}
 		running := make(map[string]bool, len(names))
 		for _, name := range names {
@@ -92,7 +93,7 @@ func (m Model) reconcile() tea.Cmd {
 				orphans = append(orphans, node)
 			}
 		}
-		return reconciledMsg{dead: dead, orphans: orphans, at: at}
+		return reconciledMsg{mapStamp: stamp, dead: dead, orphans: orphans, at: at}
 	}
 }
 
@@ -153,6 +154,12 @@ func reconstruct(sessions Sessions, workspace, session string) (state.Node, bool
 // applyReconciled folds a pass's answer into the map: the dead set replaces the
 // one before it, and any reconstructed node that is still missing is placed.
 func (m Model) applyReconciled(msg reconciledMsg) (Model, tea.Cmd) {
+	if !msg.about(m) {
+		// A pass the map that asked for it has since been switched away from.
+		// Its dead set and its orphans are both about that map's node ids, and
+		// this one's file is not theirs to be written to.
+		return m, nil
+	}
 	if msg.err != nil {
 		m.status = msg.err.Error()
 		return m, nil
@@ -199,6 +206,7 @@ func pending(nodes []state.Node, id string) bool {
 
 // respawnedMsg is what tmux made of a respawn.
 type respawnedMsg struct {
+	mapStamp
 	id  string
 	err error
 }
@@ -207,10 +215,10 @@ type respawnedMsg struct {
 // node keeps its id — and so its session name, its place, and everything else
 // it is — because respawning is not creating a new node.
 func (m Model) respawn(node state.Node) (tea.Model, tea.Cmd) {
-	sessions, workspace, dir := m.sessions, m.ws.Name, m.dirOf(node)
+	sessions, workspace, dir, stamp := m.sessions, m.ws.Name, m.dirOf(node), m.stamp()
 	return m, func() tea.Msg {
 		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, node.Cmd, provenance(workspace, node))
-		return respawnedMsg{id: node.ID, err: err}
+		return respawnedMsg{mapStamp: stamp, id: node.ID, err: err}
 	}
 }
 

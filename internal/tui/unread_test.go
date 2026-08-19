@@ -93,7 +93,7 @@ func TestUnreadDoesNotOutliveTheNode(t *testing.T) {
 	m, _ := mapWithDeepOutput(t)
 	m = run(t, m, activity("k4f2"))
 
-	m = run(t, m, nodeKilledMsg{id: "k4f2"})
+	m = run(t, m, nodeKilledMsg{mapStamp: m.stamp(), id: "k4f2"})
 
 	if m.unread["k4f2"] {
 		t.Error("a killed node's unread mark should go with it")

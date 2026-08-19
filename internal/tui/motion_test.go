@@ -251,7 +251,7 @@ func TestMovementPersists(t *testing.T) {
 
 func TestAnUnrelatedKeyForgetsTheCount(t *testing.T) {
 	m := mapWith(t, state.Cell{}, state.Cell{Col: 1}, state.Cell{Col: 2}, state.Cell{Col: 3})
-	m = pressKeys(t, m, "3", "w", "l")
+	m = pressKeys(t, m, "3", "p", "l")
 	if got := m.ws.Viewport.Cursor; got != (state.Cell{Col: 1}) {
 		t.Errorf("cursor at %+v, want one node along — the count should have been dropped", got)
 	}
