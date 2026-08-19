@@ -359,3 +359,18 @@ func TestShiftUnstacksNodesThatShareACell(t *testing.T) {
 		}
 	}
 }
+
+// TestValidNameRejectsWhitespace holds the boundary that the tmux side depends
+// on: the name is carried into the session name `trig_<workspace>_<id>`, and
+// tmux's own output — `list-sessions`, and the activity subscription — is read
+// with the name as one whitespace-free word.
+func TestValidNameRejectsWhitespace(t *testing.T) {
+	for _, name := range []string{"my ws", "ws\t2", "ws\nx", " main", "main "} {
+		if err := ValidName(name); err == nil {
+			t.Errorf("ValidName(%q) allowed whitespace, which tmux output cannot be read back through", name)
+		}
+	}
+	if err := ValidName("my-ws_2"); err != nil {
+		t.Errorf("ValidName(%q) should still be fine: %v", "my-ws_2", err)
+	}
+}

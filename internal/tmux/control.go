@@ -107,7 +107,7 @@ func (c CLI) Watch(ctx context.Context) <-chan Event {
 				return
 			case <-time.After(wait):
 			}
-			if c.follow(ctx, out) {
+			if session := c.firstSession(); session != "" && c.follow(ctx, session, out) {
 				// A connection that was made and then lost is worth retrying
 				// straight away: the usual cause is a node being killed, and
 				// the other nodes are still there to watch.
@@ -131,14 +131,10 @@ func backoff(d time.Duration) time.Duration {
 	}
 }
 
-// follow runs one control-mode client until it ends, reporting whether it ever
-// connected — which is what tells a client that died apart from a server with
-// nothing worth attaching to, and so how long Watch waits before trying again.
-func (c CLI) follow(ctx context.Context, out chan<- Event) bool {
-	session := c.firstSession()
-	if session == "" {
-		return false
-	}
+// follow runs one control-mode client on session until it ends, reporting
+// whether it ever connected — which is what tells a client that died apart from
+// one that never took, and so how long Watch waits before trying again.
+func (c CLI) follow(ctx context.Context, session string, out chan<- Event) bool {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -169,20 +165,23 @@ func (c CLI) follow(ctx context.Context, out chan<- Event) bool {
 	lines := bufio.NewScanner(stdout)
 	for lines.Scan() {
 		line := lines.Text()
-		if !connected {
-			// The first line is what proves the client attached, rather than
-			// merely having been started: tmux writes nothing until it has.
-			// Saying so any earlier would announce a stream that is not yet
-			// carrying anything, and everything that happened in the gap would
-			// be missed by a map that had been told to look afresh.
+		switch {
+		case strings.HasPrefix(line, "%session-changed"):
+			// The one line that says the attach took. An attach that did not
+			// still talks — tmux answers a missing session with a
+			// %begin/%error/%exit block — so counting any output as a
+			// connection would report a stream that never carried one, and
+			// would leave Watch retrying at the shortest backoff for as long as
+			// the session stayed missing.
 			//
-			// And a client that has only just connected knows nothing about
-			// what changed while there was none, so it says so rather than
-			// guessing.
+			// A client that has only just connected knows nothing about what
+			// changed while there was none, so it says so rather than guessing.
 			connected = true
 			push(out, Event{Kind: Sessions})
-		}
-		switch {
+
+		case !connected:
+			// Anything said before the attach took is about the attaching.
+
 		case strings.HasPrefix(line, "%subscription-changed "):
 			moved, now := changed(last, line)
 			last = now
@@ -256,9 +255,14 @@ func (c CLI) firstSession() string {
 	if err != nil {
 		return ""
 	}
+	// Split by line and not by word: a session name may hold spaces. Trigpoint
+	// will not make one (state.ValidName refuses them), but the server carries
+	// everyone's sessions, and half a stranger's name can still start with the
+	// prefix — which would send the monitor attaching to something that is not
+	// there, over and over.
 	ours := []string(nil)
-	for name := range strings.FieldsSeq(string(out)) {
-		if Ours(name) {
+	for line := range strings.SplitSeq(string(out), "\n") {
+		if name := strings.TrimRight(line, "\r"); Ours(name) {
 			ours = append(ours, name)
 		}
 	}

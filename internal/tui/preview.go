@@ -181,6 +181,12 @@ func (m Model) refreshNow() (Model, tea.Cmd) {
 
 // withPreviews folds a batch of snapshots into the map, in a fresh map for the
 // same reason markDirty builds one.
+//
+// ponytail: batches are unnumbered, so two in flight at once land in whichever
+// order they finish and an older snapshot can win. It takes an immediate
+// refresh overtaking a debounced batch to happen at all, and costs one card one
+// tick. Number the batches and drop the stale one if a card is ever seen going
+// backwards.
 func (m Model) withPreviews(taken map[string][]string) Model {
 	previews := make(map[string][]string, len(m.previews)+len(taken))
 	for id, lines := range m.previews {
@@ -288,4 +294,32 @@ func (m Model) unpreviewed() []string {
 		}
 	}
 	return ids
+}
+
+// forget drops what was being held on a node's behalf, on the way out. A
+// snapshot that outlived its node is one the next node to be handed that id
+// would show as its own: ids are only unique against the nodes on the map, so
+// they come back round.
+//
+// Fresh maps, for the reason markDirty builds one.
+func (m Model) forget(id string) Model {
+	if _, held := m.previews[id]; held {
+		previews := make(map[string][]string, len(m.previews))
+		for other, lines := range m.previews {
+			if other != id {
+				previews[other] = lines
+			}
+		}
+		m.previews = previews
+	}
+	if m.dirty[id] {
+		dirty := make(map[string]bool, len(m.dirty))
+		for other := range m.dirty {
+			if other != id {
+				dirty[other] = true
+			}
+		}
+		m.dirty = dirty
+	}
+	return m
 }

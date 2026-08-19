@@ -116,12 +116,20 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.status = ""
 	// motion is asked first and its model kept either way: a key it does not
 	// take is still a key that ends a half-typed count.
+	looking := m.ws.Viewport.Offset
 	m, handled := m.motion(msg.String())
 	if handled {
-		// Scrolling brings cards into view that have never been captured. Only
-		// those: moving the cursor is not news about any session, so a map that
-		// is merely being navigated does not keep asking tmux the same question.
-		next, cmd := m.markDirty(m.unpreviewed()...)
+		// Cards that have never been captured, and — if the viewport itself
+		// moved — every card now on screen: off screen is where activity events
+		// are dropped, so a card scrolled back to has been unwatched, whether or
+		// not it has a snapshot already. Moving the cursor without scrolling is
+		// not news about any session, so a map merely being navigated does not
+		// keep asking tmux the same question.
+		stale := m.unpreviewed()
+		if m.ws.Viewport.Offset != looking {
+			stale = m.visible()
+		}
+		next, cmd := m.markDirty(stale...)
 		return next, cmd
 	}
 	switch msg.String() {

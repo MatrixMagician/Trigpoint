@@ -141,7 +141,7 @@ func (m Model) updateConfirmKill(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Removing the node is the whole operation — there is no session
 			// behind it to ask tmux about, let alone kill.
 			m.ws.Nodes = without(m.ws.Nodes, id)
-			return m.save(), nil
+			return m.forget(id).save(), nil
 		}
 		sessions, workspace := m.sessions, m.ws.Name
 		return m, func() tea.Msg {
@@ -211,7 +211,7 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			return m, nil, true
 		}
 		m.ws.Nodes = without(m.ws.Nodes, msg.id)
-		return m.save(), nil, true
+		return m.forget(msg.id).save(), nil, true
 	}
 	return m, nil, false
 }
@@ -394,9 +394,6 @@ func (m Model) viewCells() (cols, rows int) {
 		maxInt((m.height-1+cellGap)/m.cardRows(), 1)
 }
 
-// card is a node's rendering on the map: a border carrying its title, body lines
-// beneath it, and a border carrying its kind and age. Cards are never persisted;
-// nodes are.
 // bodyOf is what fills a node's card: the preview last captured for a session,
 // the rendered markdown for a note.
 func (m Model) bodyOf(n state.Node) []string {
@@ -406,6 +403,9 @@ func (m Model) bodyOf(n state.Node) []string {
 	return noteLines(n.Note)
 }
 
+// card is a node's rendering on the map: a border carrying its title, the body
+// lines beneath it, and a border carrying its kind and age. Cards are never
+// persisted; nodes are.
 func card(n state.Node, selected bool, body int, content []string) []string {
 	style := cardStyle
 	if selected {

@@ -57,7 +57,10 @@ trig doctor       # check this machine
 ```
 
 A workspace is an independent map with its own nodes and its own default working directory.
-Workspaces share nothing; the default one is called `main` until you configure otherwise.
+Workspaces share nothing; the default one is called `main` until you configure otherwise. The
+name travels into the tmux session name `trig_<workspace>_<id>`, so it may not contain
+whitespace, a path separator, `.`, or `:` — everything tmux reads a session name back through
+uses one of those to mean something else.
 
 ## Keys
 

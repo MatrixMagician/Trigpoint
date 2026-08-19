@@ -240,3 +240,60 @@ func TestWatchStopsWithItsContext(t *testing.T) {
 		}
 	}
 }
+
+func TestChangedSurvivesASessionNameWithASpace(t *testing.T) {
+	// The subscription loops over every session on the server, and a session
+	// outside Trigpoint's prefix can be called anything — including something
+	// with a space in it, which the value's own separator is.
+	ours := SessionName("main", "aaa")
+	moved, now := changed(map[string]string{}, "%subscription-changed act $0 - - - : my scratch=100 "+ours+"=103 ")
+
+	if len(moved) != 1 || moved[0] != ours {
+		t.Errorf("a stranger's name should not cost us our own entry, got %v", moved)
+	}
+	if now[ours] != "103" {
+		t.Errorf("our session's activity should have been read, got %v", now)
+	}
+}
+
+func TestFirstSessionNeverReturnsHalfAName(t *testing.T) {
+	c := testCLI(t)
+	// Created behind Trigpoint's back — ValidName would refuse the workspace
+	// name, but a session on the server is not Trigpoint's to police.
+	spaced := Prefix + "a b"
+	if err := c.run("new-session", "-d", "-s", spaced); err != nil {
+		t.Fatalf("new-session: %v", err)
+	}
+	if err := c.Create(SessionName("main", "zzz"), t.TempDir(), nil); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Whatever it picks has to be a session that is actually there. Reading the
+	// list as words rather than lines yields "trig_a", which is not.
+	got := c.firstSession()
+	alive, err := c.Exists(got)
+	if err != nil || !alive {
+		t.Errorf("firstSession returned %q, which is not a live session (alive=%v err=%v)", got, alive, err)
+	}
+}
+
+func TestFollowingASessionThatIsNotThereReportsNoConnection(t *testing.T) {
+	c := testCLI(t)
+	if err := c.Create(SessionName("main", "aaa"), t.TempDir(), nil); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	out := make(chan Event, 8)
+
+	// tmux answers a doomed attach with a %begin/%error/%exit block, which is
+	// output — so a client counted as connected the moment it says anything
+	// would report a stream that never carried one, and Watch would retry at
+	// the shortest backoff for as long as the session stayed missing.
+	if c.follow(t.Context(), SessionName("main", "nosuch"), out) {
+		t.Error("an attach that failed should not count as a connection")
+	}
+	select {
+	case ev := <-out:
+		t.Errorf("a failed attach should push nothing, got %#v", ev)
+	default:
+	}
+}

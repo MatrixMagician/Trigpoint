@@ -294,3 +294,68 @@ func TestAHyperlinkInAPreviewDoesNotEscapeItsCard(t *testing.T) {
 		t.Errorf("a line with no hyperlink should gain no escape sequence, got %q", plain)
 	}
 }
+
+func TestScrollingBackToACardRefreshesWhatWentStaleOffScreen(t *testing.T) {
+	// Off-screen output is the one case where events are guaranteed to have been
+	// missed, so a card coming back into view is not to be trusted, preview or
+	// no preview.
+	m, sessions, _ := newNodeModel(t, state.Workspace{Name: "main", Nodes: []state.Node{
+		{ID: "aaa", Kind: state.KindShell, Title: "api", Pos: state.Cell{Col: 0, Row: 0}},
+		{ID: "far", Kind: state.KindShell, Title: "distant", Pos: state.Cell{Col: 40, Row: 0}},
+	}})
+	m = run(t, m, captureDueMsg{})
+
+	// l hops the cursor to the far node, dragging the viewport with it; h brings
+	// it back. Both cards have been captured by the time we return, so nothing
+	// is missing — only overtaken, by whatever ran while nobody was looking.
+	scroll := func(key rune) {
+		t.Helper()
+		before := m.ws.Viewport.Offset
+		m = update(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+		if m.ws.Viewport.Offset == before {
+			t.Fatalf("%q should have scrolled the viewport", key)
+		}
+		m = run(t, m, captureDueMsg{})
+	}
+	scroll('l')
+	sessions.captured = nil
+	scroll('h')
+
+	if len(sessions.captured) != 1 || sessions.captured[0].session != tmux.SessionName("main", "aaa") {
+		t.Errorf("scrolling back should refresh the card it brought into view, got %v", sessions.captured)
+	}
+}
+
+func TestMovingTheCursorWithinTheViewportCapturesNothing(t *testing.T) {
+	m, sessions := mapWithTwoShellNodes(t)
+	m = run(t, m, captureDueMsg{})
+	sessions.captured = nil
+
+	// Both cards are already on screen and already captured. Moving between
+	// them is not news about either session.
+	m = update(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	m = run(t, m, captureDueMsg{})
+
+	if len(sessions.captured) != 0 {
+		t.Errorf("navigating a captured viewport should ask tmux nothing, got %v", sessions.captured)
+	}
+}
+
+func TestKillingANodeForgetsItsPreview(t *testing.T) {
+	m, sessions := mapWithTwoShellNodes(t)
+	sessions.output = map[string]string{tmux.SessionName("main", "aaa"): "still here\n"}
+	m = update(t, m, activity("aaa"))
+	m = run(t, m, captureDueMsg{})
+	if _, taken := m.previews["aaa"]; !taken {
+		t.Fatal("the node should have a preview to forget")
+	}
+
+	m = update(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m = run(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	// Ids are only unique against the nodes on the map, so a snapshot outliving
+	// its node is a snapshot the next node to be given that id would show.
+	if _, kept := m.previews["aaa"]; kept {
+		t.Errorf("a killed node's snapshot should go with it, got %q", m.previews["aaa"])
+	}
+}
