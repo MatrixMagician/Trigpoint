@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/MatrixMagician/Trigpoint/internal/config"
 	"github.com/MatrixMagician/Trigpoint/internal/state"
@@ -235,17 +237,89 @@ func TestTheEditorIsGivenTheWholeRoundTrip(t *testing.T) {
 	}
 }
 
-// TestANoteCardKeepsItsIndentation guards the markdown a note is written in:
-// nesting in a list is leading spaces, and collapsing them would make the card
-// less readable than the text the user typed.
-func TestANoteCardKeepsItsIndentation(t *testing.T) {
-	m, _, _ := mapWithOneNote(t, "- ship\n  - notes\n\tthen previews")
+// TestANoteCardRendersItsMarkdown holds the body to SPEC §6: the card shows
+// rendered markdown, not the source. Bullets become bullets, and nesting stays
+// nested — which is the half a renderer is easiest to get wrong in a card this
+// narrow.
+func TestANoteCardRendersItsMarkdown(t *testing.T) {
+	lines := noteLines("- ship\n  - notes")
 
-	view := m.View()
-	for _, want := range []string{"  - notes", "    then previews"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("the card should keep the indentation of %q, got:\n%s", want, view)
+	if len(lines) != 2 {
+		t.Fatalf("expected two rendered lines, got %q", lines)
+	}
+	for _, line := range lines {
+		if strings.Contains(line, "- ") {
+			t.Errorf("the markdown source should not reach the card: %q", line)
 		}
+		if !strings.Contains(line, "•") {
+			t.Errorf("a list item should render as a bullet, got %q", line)
+		}
+	}
+	if indent(lines[1]) <= indent(lines[0]) {
+		t.Errorf("a nested item should sit deeper than its parent, got %q", lines)
+	}
+}
+
+func indent(line string) int {
+	return len(line) - len(strings.TrimLeft(ansi.Strip(line), " "))
+}
+
+// TestANoteCardIsNeverWiderThanACard is the property the renderer has to hold
+// whatever the markdown does: a body line wider than the card would push the
+// column beside it out of the grid.
+func TestANoteCardIsNeverWiderThanACard(t *testing.T) {
+	for _, body := range []string{
+		"# a heading long enough to need wrapping in a card this narrow",
+		"a paragraph of ordinary prose that runs well past the width of one card",
+		"`onelongunbrokentokenthatcannotbewrappedanywhereatall`",
+		"| a | table | with | columns |\n| - | - | - | - |\n| 1 | 2 | 3 | 4 |",
+		"日本語の長い行を折り返さなければならない場合はどうなるでしょうか",
+	} {
+		for _, line := range card(state.Node{Kind: state.KindNote, Title: "todo", Note: body}, false, maxNoteLines) {
+			if w := lipgloss.Width(line); w != cardWidth {
+				t.Errorf("a card line for %q is %d cells wide, want %d: %q", body, w, cardWidth, line)
+			}
+		}
+	}
+}
+
+// TestAControlSequenceInANoteNeverReachesTheCard is the trust boundary: a body
+// is pasted as often as it is typed, and glamour passes text it does not
+// understand straight through, so an escape sequence would otherwise repaint
+// the map from inside a card.
+func TestAControlSequenceInANoteNeverReachesTheCard(t *testing.T) {
+	const hostile = "harmless \x1b[2Jand \x1b]0;title\x07more\r\n\ttabbed"
+
+	// The escape and the bell go; what is left of them is ordinary text, and
+	// deleting that too would be editing the user's writing rather than
+	// defusing it.
+	scrubbed := scrub(hostile)
+	for _, r := range scrubbed {
+		if r < 0x20 && r != '\n' || r == 0x7f {
+			t.Errorf("control character %q survived scrubbing: %q", r, scrubbed)
+		}
+	}
+	if !strings.Contains(scrubbed, "harmless") || !strings.Contains(scrubbed, "tabbed") {
+		t.Errorf("scrubbing should keep the writing, got %q", scrubbed)
+	}
+	if !strings.Contains(scrubbed, "    tabbed") {
+		t.Errorf("a tab should become spaces rather than vanish, got %q", scrubbed)
+	}
+
+	for _, line := range noteLines(hostile) {
+		if strings.ContainsRune(line, 0x1b) {
+			t.Errorf("an escape sequence reached the card: %q", line)
+		}
+	}
+}
+
+// TestRenderedNotesAreCached keeps cursor movement off the markdown parser:
+// bodyHeight asks every node on the map how tall it is on every frame.
+func TestRenderedNotesAreCached(t *testing.T) {
+	body := "# plan\n- ship notes"
+	first := noteLines(body)
+	if &first[0] != &noteLines(body)[0] {
+		t.Error("the same body should come back from the cache, not be re-rendered")
 	}
 }
 

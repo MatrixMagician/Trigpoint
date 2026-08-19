@@ -12,8 +12,15 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
+	gansi "github.com/charmbracelet/glamour/ansi"
+	"github.com/charmbracelet/glamour/styles"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"golang.org/x/term"
 
 	"github.com/MatrixMagician/Trigpoint/internal/state"
 )
@@ -99,26 +106,132 @@ func editorSession(body string) (*exec.Cmd, func() (string, error), error) {
 	}, nil
 }
 
-// noteLines is a note body as the lines a card shows it in. The rendering is
-// deliberately the markdown itself rather than a formatted version of it — the
-// body is a handful of lines in an 18-column card, where a renderer's headings
-// and rules cost more room than they buy.
+// noteLines is a note body rendered for the card: markdown through glamour,
+// broken into the lines the card shows it in.
 //
-// Tabs become spaces and control characters go, because a body is pasted as
-// often as it is typed and an escape sequence reaching a card would repaint the
-// map. Leading spaces survive: indentation is what a markdown list means by
-// nesting, and collapsing it would make the body less readable than the text
-// the user wrote, not more.
+// The result is cached on the body text. bodyHeight asks every node on the map
+// how tall it wants to be on every frame, and a markdown parse per node per
+// frame would make cursor movement cost more the more notes you have written.
+// The returned slice is shared — read it, never write to it.
 //
-// ponytail: plain text, no markdown renderer; reach for glamour if bodies ever
-// grow past a few lines.
+// ponytail: the cache is emptied wholesale once it outgrows noteCacheMax, which
+// re-renders every visible note the next frame; reach for an LRU if a map of
+// hundreds of notes ever makes that show.
 func noteLines(body string) []string {
 	if body == "" {
 		return nil
 	}
-	lines := strings.Split(body, "\n")
-	for i, line := range lines {
-		lines[i] = sanitise(strings.ReplaceAll(line, "\t", "    "))
+	noteMu.Lock()
+	defer noteMu.Unlock()
+	if lines, ok := noteCache[body]; ok {
+		return lines
+	}
+	lines := renderNote(body)
+	if len(noteCache) >= noteCacheMax {
+		clear(noteCache)
+	}
+	noteCache[body] = lines
+	return lines
+}
+
+// noteCacheMax is generous next to any real map: a workspace of a hundred notes
+// still never empties it, and one note edited a hundred times is what it is for.
+const noteCacheMax = 256
+
+var (
+	noteMu    sync.Mutex
+	noteCache = map[string][]string{}
+)
+
+// renderNote is the markdown rendering itself (SPEC §6). Glamour is asked for a
+// card's worth of width and nothing else — no margin, because two columns of
+// eighteen is an eighth of the card.
+func renderNote(body string) []string {
+	out, err := noteMarkdown().Render(scrub(body))
+	if err != nil {
+		// A body that will not render is still a body: showing the markdown
+		// source beats showing the user an error where their writing was.
+		out = scrub(body)
+	}
+	var lines []string
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimRight(line, " ")
+		// Glamour separates blocks generously, which is right on a full-width
+		// page and not in a ten-line card: two blank lines between a list and
+		// the paragraph after it is a fifth of the card spent on the gap.
+		if blank(line) && len(lines) > 0 && blank(lines[len(lines)-1]) {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return trimBlank(lines)
+}
+
+// trimBlank drops the empty lines glamour leaves above and below a document.
+// Blank lines *inside* the body stay — they are what separates one paragraph
+// from the next.
+func trimBlank(lines []string) []string {
+	for len(lines) > 0 && blank(lines[0]) {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && blank(lines[len(lines)-1]) {
+		lines = lines[:len(lines)-1]
 	}
 	return lines
+}
+
+// blank reports whether a rendered line carries nothing but its own colouring.
+func blank(line string) bool { return strings.TrimSpace(ansi.Strip(line)) == "" }
+
+// scrub is what a note body has to survive before it is markdown. A body is
+// pasted as often as it is typed, and an escape sequence reaching a card would
+// repaint the map — glamour passes text it does not understand straight
+// through, so this is the boundary, not the renderer.
+func scrub(body string) string {
+	return sanitiseKeeping(strings.ReplaceAll(body, "\t", "    "), '\n')
+}
+
+// noteMarkdown is the renderer, built once: constructing one compiles a chroma
+// theme and a goldmark parser, which is not work to repeat per frame. New calls
+// it at startup so that the terminal question markdownStyle asks is asked while
+// Trigpoint still owns the terminal to ask it with.
+func noteMarkdown() *glamour.TermRenderer {
+	noteRendererOnce.Do(func() {
+		style := markdownStyle()
+		noMargin := uint(0)
+		style.Document.Margin = &noMargin
+
+		r, err := glamour.NewTermRenderer(
+			glamour.WithStyles(style),
+			glamour.WithWordWrap(cardBodyWidth),
+			glamour.WithEmoji(),
+		)
+		if err != nil {
+			// NewTermRenderer only fails on a style it cannot parse, and this
+			// one is glamour's own; a renderer that is nil here would panic on
+			// every frame, so fail loudly at the first note instead.
+			panic("trig: cannot build the note renderer: " + err.Error())
+		}
+		noteRenderer = r
+	})
+	return noteRenderer
+}
+
+var (
+	noteRendererOnce sync.Once
+	noteRenderer     *glamour.TermRenderer
+)
+
+// markdownStyle is the same choice glamour's own auto style makes — dark or
+// light by the terminal, and plain text when there is no terminal to ask. It is
+// made here rather than through WithAutoStyle because the margin has to come off
+// the style, and WithAutoStyle hands back a renderer, not a style.
+func markdownStyle() gansi.StyleConfig {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		return styles.NoTTYStyleConfig
+	}
+	if lipgloss.HasDarkBackground() {
+		return styles.DarkStyleConfig
+	}
+	return styles.LightStyleConfig
 }

@@ -72,7 +72,7 @@ What is bound today:
 | `0` | Jump to the origin |
 | `Enter` | Attach to the node under the cursor — the whole terminal, handed over. On a note, edit its body in `$EDITOR` |
 | `n` | New shell node at the nearest free cell to the cursor |
-| `N` | New note — a markdown card with no session behind it |
+| `N` | New note — a rendered markdown card with no session behind it |
 | `x` | Kill the node under the cursor and its session (asks first; a note is just removed) |
 | `q` / `Ctrl-C` | Quit — sessions keep running |
 
@@ -88,6 +88,12 @@ mechanism attach uses — the terminal is released and taken back when the edito
 the card redraws with what you wrote. Quitting the editor without writing leaves the body as
 it was; writing and then exiting non-zero keeps the writing. Notes are never alive and never
 dead, so nothing about liveness applies to them — a note's card carries no status dot.
+
+The card shows the markdown rendered, not its source: headings, bullets, and emphasis come
+out as themselves, wrapped to the card and capped at ten lines so one long note cannot cost
+every other card its screen. See
+[ADR 0004](docs/adr/0004-note-bodies-render-through-glamour.md), which also records what
+rendering markdown costs the binary.
 
 Movement never refuses. `L` into an occupied cell shoves the occupant one cell right, and
 whatever is behind it too: one collision rule, which groups will reuse unchanged.

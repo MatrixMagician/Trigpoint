@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/MatrixMagician/Trigpoint/internal/state"
 	"github.com/MatrixMagician/Trigpoint/internal/tmux"
@@ -249,12 +250,22 @@ func clampTitle(s string) string {
 
 // sanitise drops control characters, which would otherwise reach a card, a
 // status line, and the workspace file on disk.
-func sanitise(s string) string {
+func sanitise(s string) string { return sanitiseKeeping(s) }
+
+// sanitiseKeeping is sanitise with an exception list, for the one caller that
+// has to keep a control character: a note body is many lines, and the newlines
+// between them are what makes it so.
+func sanitiseKeeping(s string, keep ...rune) string {
 	return strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
-			return -1
+		if r >= 0x20 && r != 0x7f {
+			return r
 		}
-		return r
+		for _, k := range keep {
+			if r == k {
+				return r
+			}
+		}
+		return -1
 	}, s)
 }
 
@@ -266,6 +277,9 @@ const (
 	// cardRowsNoBody is a cell with no body lines in it: two borders and the
 	// blank line under them.
 	cardRowsNoBody = 3
+	// cardBodyWidth is the room inside a card's walls, once "│ " and " │" have
+	// taken theirs. It is the width the markdown renderer wraps to.
+	cardBodyWidth = cardWidth - 4
 	// maxNoteLines caps what one note can cost every other card on the map.
 	// Card sizes (§7.3, `s`) will set this per node; until they do it is one
 	// number, chosen as the largest a card was ever going to be.
@@ -393,17 +407,31 @@ func card(n state.Node, selected bool, body int) []string {
 		if i < len(content) {
 			text = content[i]
 		}
-		lines = append(lines, style.Render(bodyLine(text)))
+		lines = append(lines, bodyLine(style, text))
 	}
 	return append(lines, style.Render(border("╰─ ", trail, "─╯")))
 }
 
 // bodyLine is one line inside a card, padded with spaces rather than the rule
 // the borders are drawn with, so the card reads as a box with text in it.
-func bodyLine(text string) string {
-	const room = cardWidth - 4 // "│ " and " │"
-	text = truncate(text, room)
-	return "│ " + text + strings.Repeat(" ", maxInt(room-lipgloss.Width(text), 0)) + " │"
+//
+// The text arrives already coloured by the markdown renderer, so only the walls
+// are given the card's own style — styling the whole line would fight the
+// rendering for it — and the cut is made by ansi.Truncate, which counts cells
+// and not bytes, so a line is never cut through the middle of an escape
+// sequence.
+func bodyLine(style lipgloss.Style, text string) string {
+	text = ansi.Truncate(text, cardBodyWidth, "…")
+	pad := strings.Repeat(" ", maxInt(cardBodyWidth-lipgloss.Width(text), 0))
+	if strings.Contains(text, "\x1b") {
+		// Close any colour the renderer left open, so a heading's background
+		// cannot run out over the card's right-hand wall. Only worth adding
+		// where there is colour to close: on a terminal that cannot show any,
+		// the renderer emits none and a bare reset would be the only escape
+		// sequence in the whole frame.
+		text += "\x1b[0m"
+	}
+	return style.Render("│ ") + text + pad + style.Render(" │")
 }
 
 func border(lead, text, tail string) string {

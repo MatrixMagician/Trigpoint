@@ -51,6 +51,11 @@ type Model struct {
 }
 
 func New(cfg config.Config, ws state.Workspace, stateDir string, sessions Sessions) Model {
+	// Built here, and not on the first note drawn, because choosing the
+	// markdown style asks the terminal what colour it is — a question that has
+	// to be put before Bubble Tea owns the terminal, or the answer comes back
+	// as keystrokes on a screen already being painted.
+	noteMarkdown()
 	return Model{cfg: cfg, ws: ws, stateDir: stateDir, sessions: sessions}
 }
 

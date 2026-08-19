@@ -31,6 +31,10 @@ it now would be a switch with two unreachable arms. One constant until then.
 Adding one long note grows every card on the map. This is the honest cost of a grid, and it
 is bounded by `maxNoteLines`, so a thousand-line note costs ten lines and not a thousand.
 
+Asking a node how tall it wants to be has to be cheap, because the question is asked of every
+node on the map on every frame. For notes that means the rendered body is cached rather than
+re-parsed — see [ADR 0004](0004-note-bodies-render-through-glamour.md).
+
 Live previews (M2) fill in the body for shell and agent nodes by making `nodeBodyHeight`
 answer for those kinds too, and card sizes (M3) replace the constant cap with the node's own
 `Size`. Neither moves anything else about card geometry.
