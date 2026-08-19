@@ -12,7 +12,7 @@ import (
 
 func newModel(t *testing.T, cfg config.Config, ws state.Workspace) Model {
 	t.Helper()
-	m := New(cfg, ws)
+	m := New(cfg, ws, t.TempDir(), &fakeSessions{})
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	return sized.(Model)
 }
@@ -78,7 +78,7 @@ func TestConfirmQuitAsksFirst(t *testing.T) {
 }
 
 func TestViewFitsTheTerminal(t *testing.T) {
-	m := New(config.Default(), state.Workspace{Name: "main"})
+	m := New(config.Default(), state.Workspace{Name: "main"}, t.TempDir(), &fakeSessions{})
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
 	lines := strings.Split(sized.(Model).View(), "\n")
 
@@ -93,7 +93,7 @@ func TestViewFitsTheTerminal(t *testing.T) {
 }
 
 func TestViewBeforeFirstWindowSizeDoesNotPanic(t *testing.T) {
-	_ = New(config.Default(), state.Workspace{Name: "main"}).View()
+	_ = New(config.Default(), state.Workspace{Name: "main"}, t.TempDir(), &fakeSessions{}).View()
 }
 
 func isQuit(cmd tea.Cmd) bool {
@@ -119,11 +119,77 @@ func stripANSI(s string) string {
 }
 
 func TestViewSurvivesAVeryNarrowTerminal(t *testing.T) {
-	m := New(config.Default(), state.Workspace{Name: "a-long-workspace-name"})
+	m := New(config.Default(), state.Workspace{Name: "a-long-workspace-name"}, t.TempDir(), &fakeSessions{})
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 12, Height: 4})
 	for i, line := range strings.Split(sized.(Model).View(), "\n") {
 		if n := len([]rune(stripANSI(line))); n > 12 {
 			t.Errorf("line %d is %d columns wide in a 12-column terminal: %q", i, n, line)
 		}
 	}
+}
+
+// TestTheStatusBarIsAlwaysExactlyOneLine guards the view's only hard invariant:
+// it fills the terminal and never overruns it. The bar carries text from tmux
+// and from the user, so both are able to break it.
+func TestTheStatusBarIsAlwaysExactlyOneLine(t *testing.T) {
+	long := strings.Repeat("a-very-long-node-title ", 8)
+	cases := map[string]struct {
+		width, height int
+		ws            state.Workspace
+		status        string
+		mode          mode
+		killing       string
+	}{
+		"a multi-line tmux error":          {80, 24, state.Workspace{Name: "main"}, "tmux: no server running\nand a second line", modeNormal, ""},
+		"an error wider than the terminal": {40, 10, state.Workspace{Name: "main"}, long, modeNormal, ""},
+		"a long title being typed":         {40, 10, state.Workspace{Name: "main"}, "", modeTitle, ""},
+		"a kill confirmation in a narrow terminal": {
+			20, 8,
+			state.Workspace{Name: "main", Nodes: []state.Node{{ID: "k4f2", Title: long}}},
+			"", modeConfirmKill, "k4f2",
+		},
+		"a workspace name wider than the terminal": {12, 6, state.Workspace{Name: "a-long-workspace-name"}, "", modeNormal, ""},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := New(config.Default(), tc.ws, t.TempDir(), &fakeSessions{})
+			sized, _ := m.Update(tea.WindowSizeMsg{Width: tc.width, Height: tc.height})
+			view := sized.(Model)
+			view.status, view.mode, view.input, view.killing = tc.status, tc.mode, long, tc.killing
+
+			lines := strings.Split(view.View(), "\n")
+			if len(lines) != tc.height {
+				t.Errorf("view is %d lines in a %d-line terminal", len(lines), tc.height)
+			}
+			for i, line := range lines {
+				if n := len([]rune(stripANSI(line))); n > tc.width {
+					t.Errorf("line %d is %d columns wide in a %d-column terminal: %q", i, n, tc.width, line)
+				}
+			}
+		})
+	}
+}
+
+// TestTheStatusBarRightAlignsItsHints holds the two halves of the bar apart. The
+// gap is computed from the terminal width, so anything that collapses runs of
+// spaces silently undoes it and the hints drift back against the workspace name.
+func TestTheStatusBarRightAlignsItsHints(t *testing.T) {
+	m := newModel(t, config.Default(), state.Workspace{Name: "main"})
+	bar := lastLine(m.View())
+
+	if !strings.HasSuffix(strings.TrimRight(bar, " "), "q quit") {
+		t.Errorf("the key hints should sit at the right-hand end, got %q", bar)
+	}
+	if !strings.Contains(bar, "main") {
+		t.Errorf("the bar should still name the workspace, got %q", bar)
+	}
+	if !strings.Contains(bar, "  ") {
+		t.Errorf("the two halves should be pushed apart, got %q", bar)
+	}
+}
+
+func lastLine(view string) string {
+	lines := strings.Split(view, "\n")
+	return lines[len(lines)-1]
 }

@@ -15,26 +15,47 @@ import (
 
 var (
 	statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color("238")).Padding(0, 1)
+	errorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color("124")).Padding(0, 1)
 	hintStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+)
+
+// mode is what the next keystroke means. Trigpoint is modal, so every key is
+// read by exactly one of these.
+type mode int
+
+const (
+	modeNormal mode = iota
+	modeTitle
+	modeConfirmKill
+	modeConfirmQuit
 )
 
 // Model is the map view's state. The workspace it renders is owned here; the
 // terminal size arrives from Bubble Tea and is zero until the first resize.
 type Model struct {
-	cfg config.Config
-	ws  state.Workspace
+	cfg      config.Config
+	ws       state.Workspace
+	stateDir string
+	sessions Sessions
 
 	width, height int
-	confirmQuit   bool
+	mode          mode
+	input         string
+	status        string       // the last failure, shown until the next action
+	pending       []state.Node // nodes whose sessions tmux has not confirmed yet
+	killing       string       // the node x was pressed on, held until y or n
 }
 
-func New(cfg config.Config, ws state.Workspace) Model {
-	return Model{cfg: cfg, ws: ws}
+func New(cfg config.Config, ws state.Workspace, stateDir string, sessions Sessions) Model {
+	return Model{cfg: cfg, ws: ws, stateDir: stateDir, sessions: sessions}
 }
 
 func (m Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if next, cmd, handled := m.updateNodeMsg(msg); handled {
+		return next, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -44,15 +65,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyCtrlC {
 			return m, tea.Quit
 		}
-		if m.confirmQuit {
+		switch m.mode {
+		case modeTitle:
+			return m.updateTitle(msg)
+		case modeConfirmKill:
+			return m.updateConfirmKill(msg)
+		case modeConfirmQuit:
 			return m.updateConfirmQuit(msg)
 		}
-		if msg.String() == "q" {
-			if m.cfg.General.ConfirmQuit {
-				m.confirmQuit = true
-				return m, nil
-			}
-			return m, tea.Quit
+		return m.updateNormal(msg)
+	}
+	return m, nil
+}
+
+func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.status = ""
+	switch msg.String() {
+	case "q":
+		if m.cfg.General.ConfirmQuit {
+			m.mode = modeConfirmQuit
+			return m, nil
+		}
+		// Quitting Trigpoint kills nothing: every session outlives it (§5.2).
+		return m, tea.Quit
+	case "n":
+		m.mode, m.input = modeTitle, ""
+	case "x":
+		// The target is fixed here rather than read again at y, because a
+		// create landing while the prompt is up moves the cursor onto the new
+		// node — and the user would then confirm one kill and get another.
+		if node, ok := m.selected(); ok {
+			m.mode, m.killing = modeConfirmKill, node.ID
 		}
 	}
 	return m, nil
@@ -63,7 +106,7 @@ func (m Model) updateConfirmQuit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y", "Y":
 		return m, tea.Quit
 	case "n", "N", "esc":
-		m.confirmQuit = false
+		m.mode = modeNormal
 	}
 	return m, nil
 }
@@ -81,25 +124,56 @@ func (m Model) View() string {
 
 func (m Model) mapView() string {
 	if len(m.ws.Nodes) == 0 {
-		return hintStyle.Render("The map is empty.")
+		return hintStyle.Render("The map is empty. Press n to create a shell node.")
 	}
-	// Cards land in the next ticket; until then a placed node is only a count.
-	return hintStyle.Render(fmt.Sprintf("%d nodes placed.", len(m.ws.Nodes)))
+	return m.cards()
 }
 
 func (m Model) statusBar() string {
-	bar := statusStyle.Width(m.width).MaxWidth(m.width)
-	if m.confirmQuit {
-		return bar.Render("Quit Trigpoint? Sessions keep running. (y/n)")
+	// A prompt outranks a stale error: the error arrives from tmux whenever it
+	// gets round to it, and taking the bar mid-prompt leaves the user typing
+	// into something they can no longer see. The error is still there when the
+	// prompt closes.
+	switch {
+	case m.mode == modeConfirmQuit:
+		return m.bar(statusStyle, "Quit Trigpoint? Sessions keep running. (y/n)")
+	case m.mode == modeTitle:
+		return m.bar(statusStyle, "Title: "+flatten(m.input)+"▏")
+	case m.mode == modeConfirmKill:
+		node, _ := m.node(m.killing)
+		return m.bar(statusStyle, fmt.Sprintf("Kill %s and its session? (y/n)", flatten(node.Title)))
+	case m.status != "":
+		return m.bar(errorStyle, flatten(m.status))
 	}
-	left := fmt.Sprintf("%s · %s", m.ws.Name, pluralise(len(m.ws.Nodes), "node"))
-	right := "q quit"
 
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 2 // statusStyle's padding
+	left := fmt.Sprintf("%s · %s", m.ws.Name, pluralise(len(m.ws.Nodes), "node"))
+	right := "n new · x kill · q quit"
+
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - barPadding
 	if gap < 1 {
-		return bar.Render(left)
+		return m.bar(statusStyle, left)
 	}
-	return bar.Render(left + strings.Repeat(" ", gap) + right)
+	return m.bar(statusStyle, left+strings.Repeat(" ", gap)+right)
+}
+
+// barPadding is the columns statusStyle spends on its own padding.
+const barPadding = 2
+
+// bar renders one line of status bar, and exactly one line: a title in a narrow
+// terminal would otherwise wrap and push the map off the bottom of the screen.
+//
+// It cuts but does not flatten. Untrusted text — a tmux error, a typed title —
+// is flattened by its caller before being composed in, because the composed
+// line carries a run of spaces holding its two halves apart, and flattening
+// here would collapse that alignment along with the newlines.
+func (m Model) bar(style lipgloss.Style, text string) string {
+	return style.Width(m.width).MaxWidth(m.width).
+		Render(truncate(text, m.width-barPadding))
+}
+
+// flatten turns any run of whitespace, newlines included, into a single space.
+func flatten(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 func pluralise(n int, noun string) string {
