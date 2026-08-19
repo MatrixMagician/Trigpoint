@@ -280,7 +280,7 @@ func TestANoteCardIsNeverWiderThanACard(t *testing.T) {
 		"| a | table | with | columns |\n| - | - | - | - |\n| 1 | 2 | 3 | 4 |",
 		"日本語の長い行を折り返さなければならない場合はどうなるでしょうか",
 	} {
-		for _, line := range card(state.Node{Kind: state.KindNote, Title: "todo", Note: body}, false, false, false, maxNoteLines, noteLines(body)) {
+		for _, line := range card(state.Node{Kind: state.KindNote, Title: "todo", Note: body}, false, false, false, 10, noteLines(body)) {
 			if w := lipgloss.Width(line); w != cardWidth {
 				t.Errorf("a card line for %q is %d cells wide, want %d: %q", body, w, cardWidth, line)
 			}
@@ -343,11 +343,15 @@ func TestANoteCardCarriesNoBadge(t *testing.T) {
 }
 
 // TestALongNoteDoesNotCostTheWholeMapItsScreen keeps one node from setting the
-// height of every card on the map without bound.
+// height of every card on the map without bound. The cap is the note's own card
+// size, even at the largest of them.
 func TestALongNoteDoesNotCostTheWholeMapItsScreen(t *testing.T) {
 	m, _, _ := mapWithOneNote(t, strings.Repeat("line\n", 200))
-	if got := m.bodyHeight(); got != maxNoteLines {
-		t.Errorf("a 200-line note asked for %d body lines, want the cap of %d", got, maxNoteLines)
+	m = m.withNode("k4f2", func(n *state.Node) { n.Size = state.SizeL })
+
+	want := config.Default().General.PreviewLines.L
+	if got := m.bodyHeight(); got != want {
+		t.Errorf("a 200-line note asked for %d body lines, want the cap of %d", got, want)
 	}
 }
 

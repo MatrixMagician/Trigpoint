@@ -253,24 +253,14 @@ const (
 	minTick     = time.Second
 )
 
-// previewHeight is how many lines of preview a node's card shows: its card size,
-// looked up in config. A node with no session shows none, and neither does a
-// size configured to zero — which is how a card opts out of being captured.
+// previewHeight is how many lines of preview a node's card shows: what its card
+// size has room for. A node with no session shows none, and neither does a size
+// configured to zero — which is how a card opts out of being captured at all.
 func (m Model) previewHeight(n state.Node) int {
 	if !n.HasSession() {
 		return 0
 	}
-	lines := m.cfg.General.PreviewLines
-	switch n.Size {
-	case state.SizeS:
-		return maxInt(lines.S, 0)
-	case state.SizeL:
-		return maxInt(lines.L, 0)
-	default:
-		// Sizes are not set until card attributes land (§7.3, `s`), so an unset
-		// size is the middle one rather than nothing.
-		return maxInt(lines.M, 0)
-	}
+	return m.sizeLines(n)
 }
 
 // previewBody is what capture-pane gave back, cut down to what a card can show.

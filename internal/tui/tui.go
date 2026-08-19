@@ -32,6 +32,9 @@ const (
 	modeConfirmQuit
 	modeAdopt
 	modePeek
+	modeRename
+	modeTags
+	modeColour
 )
 
 // Model is the map view's state. The workspace it renders is owned here; the
@@ -50,6 +53,7 @@ type Model struct {
 	killing       string       // the node x was pressed on, held until y or n
 	respawning    string       // the dead node Enter was pressed on, held until y or n
 	creating      state.Kind   // the kind the title prompt is collecting a name for
+	editing       string       // the node an attribute prompt was opened on
 	count         string       // the count prefix typed so far, applied to the next motion
 	candidates    []string     // the sessions the adoption picker is offering
 	choice        int          // which of them is under the picker's own cursor
@@ -146,6 +150,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateConfirmQuit(msg)
 		case modeAdopt:
 			return m.updateAdopt(msg)
+		case modeRename:
+			return m.updateRename(msg)
+		case modeTags:
+			return m.updateTags(msg)
+		case modeColour:
+			return m.updateColour(msg)
 		case modePeek:
 			return m.updatePeek(msg)
 		}
@@ -202,6 +212,16 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Peek: the node's output, read without being given the keyboard
 		// (§7.3).
 		return m.peek()
+	case "r":
+		return m.editAttr(modeRename, func(n state.Node) string { return n.Title })
+	case "t":
+		return m.editAttr(modeTags, func(n state.Node) string { return strings.Join(n.Tags, " ") })
+	case "c":
+		return m.cycleColour()
+	case "C":
+		return m.openColours()
+	case "s":
+		return m.cycleSize()
 	case "x":
 		// The target is fixed here rather than read again at y, because a
 		// create landing while the prompt is up moves the cursor onto the new
@@ -258,6 +278,12 @@ func (m Model) statusBar() string {
 		return m.bar(statusStyle, "Quit Trigpoint? Sessions keep running. (y/n)")
 	case m.mode == modeTitle:
 		return m.bar(statusStyle, titleLabel(m.creating)+": "+flatten(m.input)+"▏")
+	case m.mode == modeRename:
+		return m.bar(statusStyle, "Rename: "+flatten(m.input)+"▏")
+	case m.mode == modeTags:
+		return m.bar(statusStyle, "Tags: "+flatten(m.input)+"▏")
+	case m.mode == modeColour:
+		return m.bar(statusStyle, m.colourBar())
 	case m.mode == modeAdopt:
 		return m.bar(statusStyle, fmt.Sprintf("Adopt %s (%d of %d) · j/k choose · ⏎ adopt · esc cancel",
 			flatten(m.candidates[m.choice]), m.choice+1, len(m.candidates)))
@@ -278,16 +304,45 @@ func (m Model) statusBar() string {
 	}
 
 	left := fmt.Sprintf("%s · %s", m.ws.Name, pluralise(len(m.ws.Nodes), "node"))
-	right := "⏎ attach · ␣ peek · n new · N note · A adopt · x kill · q quit"
+	// The count prefix is what the next keystroke will do, so it is offered
+	// before any hint about which keystroke that might be.
+	prefix := ""
 	if m.count != "" {
-		right = m.count + " · " + right
+		prefix = m.count + " · "
 	}
+	// TrimSuffix for the terminal with room for the count and not one hint: a
+	// separator with nothing after it reads as something that failed to render.
+	right := strings.TrimSuffix(prefix+fitHints(m.width-lipgloss.Width(left)-lipgloss.Width(prefix)-barPadding-1), " · ")
 
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - barPadding
 	if gap < 1 {
 		return m.bar(statusStyle, left)
 	}
 	return m.bar(statusStyle, left+strings.Repeat(" ", gap)+right)
+}
+
+// hints are the keys the status bar offers, in the order it gives them up: a
+// terminal too narrow for all of them loses them from the end, rather than
+// losing the lot the moment one does not fit.
+var hints = []string{
+	"⏎ attach", "␣ peek", "n new", "N note", "A adopt", "x kill", "q quit",
+	"r name", "c colour", "t tags", "s size",
+}
+
+// fitHints is as many of them as width has room for.
+func fitHints(width int) string {
+	var kept strings.Builder
+	for _, hint := range hints {
+		next := hint
+		if kept.Len() > 0 {
+			next = " · " + hint
+		}
+		if lipgloss.Width(kept.String())+lipgloss.Width(next) > width {
+			break
+		}
+		kept.WriteString(next)
+	}
+	return kept.String()
 }
 
 // barPadding is the columns statusStyle spends on its own padding.

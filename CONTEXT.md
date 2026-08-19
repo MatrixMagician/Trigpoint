@@ -83,6 +83,17 @@ _Avoid_: card (for the markdown body), memo
 The rendering of a node on the map — border, preview, badge. Strictly visual. A card is
 never created, killed, or persisted; nodes are. Say "remove the node", not "remove the card".
 
+**Accent**:
+The named colour a node carries, drawn on its card's border. A name from a closed palette
+rather than a colour value — the name is what persists and what `c` cycles. See
+[ADR 0008](docs/adr/0008-accent-colours-are-a-named-palette.md).
+_Avoid_: highlight, theme, colour (for the palette entry itself)
+
+**Card size**:
+Small, medium, or large: how many body lines one node asks for. A property of the node, not
+of the card — the card is only where the size shows, and a small one shows no preview at all.
+_Avoid_: zoom, scale, height
+
 **Preview**:
 The recent-output snapshot shown inside a card. Always a snapshot, never a live terminal —
 the distinction is the whole v1 architecture.

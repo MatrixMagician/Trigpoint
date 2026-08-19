@@ -88,7 +88,7 @@ func (m Model) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input = string(r[:len(r)-1])
 		}
 	case tea.KeyRunes, tea.KeySpace:
-		m.input = clampTitle(m.input + sanitise(string(msg.Runes)))
+		m.input = clampRunes(m.input+sanitise(string(msg.Runes)), maxTitleLen)
 	}
 	return m, nil
 }
@@ -233,14 +233,7 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// The body is applied even when the editor exited badly: it is what the
 		// file said, and an editor that wrote and then complained has still
 		// done the writing.
-		nodes := append([]state.Node(nil), m.ws.Nodes...)
-		for i := range nodes {
-			if nodes[i].ID == msg.id {
-				nodes[i].Note = msg.body
-			}
-		}
-		m.ws.Nodes = nodes
-		return m.save(), nil, true
+		return m.withNode(msg.id, func(n *state.Node) { n.Note = msg.body }).save(), nil, true
 
 	case respawnedMsg:
 		if msg.err != nil {
@@ -287,6 +280,20 @@ func without(nodes []state.Node, id string) []state.Node {
 	return kept
 }
 
+// withNode returns the map with one node edited, in a fresh slice: a Model is
+// copied by value all over Bubble Tea, and editing in place would change the
+// map every older copy is still holding.
+func (m Model) withNode(id string, edit func(*state.Node)) Model {
+	nodes := append([]state.Node(nil), m.ws.Nodes...)
+	for i := range nodes {
+		if nodes[i].ID == id {
+			edit(&nodes[i])
+		}
+	}
+	m.ws.Nodes = nodes
+	return m
+}
+
 // save persists the whole workspace after every mutation, in the update itself
 // rather than in a command: two saves in flight at once could land in either
 // order, and the loser would silently take the map back to what it used to be.
@@ -299,13 +306,6 @@ func (m Model) save() Model {
 		m.status = err.Error()
 	}
 	return m
-}
-
-func clampTitle(s string) string {
-	if r := []rune(s); len(r) > maxTitleLen {
-		return string(r[:maxTitleLen])
-	}
-	return s
 }
 
 // sanitise drops control characters, which would otherwise reach a card, a
@@ -340,10 +340,14 @@ const (
 	// cardBodyWidth is the room inside a card's walls, once "│ " and " │" have
 	// taken theirs. It is the width the markdown renderer wraps to.
 	cardBodyWidth = cardWidth - 4
-	// maxNoteLines caps what one note can cost every other card on the map.
-	// Card sizes (§7.3, `s`) will set this per node; until they do it is one
-	// number, chosen as the largest a card was ever going to be.
-	maxNoteLines = 10
+	// minTagWidth is the least a tag can be shown in and still say anything: a
+	// hash, a character or two of the tag, and the ellipsis that says there was
+	// more. Below it the top border carries the title alone.
+	minTagWidth = 4
+	// tagOverhead is what the border spends around the tags — the space after
+	// the title, one rule, the space before the tags, the space after them, and
+	// the corner.
+	tagOverhead = 6
 )
 
 // cardRows is the height of one cell of the grid. Cards line up in columns, so
@@ -366,16 +370,13 @@ func (m Model) bodyHeight() int {
 // nodeBodyHeight is the lines one node would like. A session-backed node asks
 // for its preview line count, whether or not a snapshot has been taken yet — a
 // card that grew a body the moment its first output landed would move every
-// other card on the map with it. A note asks for what it has to show, capped so
-// that one long note cannot cost the whole map its screen.
+// other card on the map with it. A note asks for what it has to show, capped by
+// its own card size so that one long note cannot cost the whole map its screen.
 func (m Model) nodeBodyHeight(n state.Node) int {
 	if n.HasSession() {
 		return m.previewHeight(n)
 	}
-	if got := len(noteLines(n.Note)); got < maxNoteLines {
-		return got
-	}
-	return maxNoteLines
+	return minInt(len(noteLines(n.Note)), m.sizeLines(n))
 }
 
 var (
@@ -417,7 +418,7 @@ func (m Model) cards() string {
 			node, ok := at[cell]
 			drawn := []string(nil)
 			if ok {
-				drawn = card(node, cell == m.ws.Viewport.Cursor, m.dead[node.ID], m.unread[node.ID], body, m.bodyOf(node))
+				drawn = card(m.shown(node), m.drawnSelected(node), m.dead[node.ID], m.unread[node.ID], body, m.bodyOf(node))
 			}
 			for i := range lines {
 				if col > minCell.Col {
@@ -458,12 +459,26 @@ func (m Model) viewCells() (cols, rows int) {
 }
 
 // bodyOf is what fills a node's card: the preview last captured for a session,
-// the rendered markdown for a note.
+// the rendered markdown for a note — cut to what this node's own card size has
+// room for. The cut is here and not only in the capture, because the body every
+// card is drawn with is the hungriest node's on the map, and a small card must
+// not spend the room a large one asked for. A snapshot keeps its end and a note
+// its beginning: the last thing a session said is the news, the first thing a
+// note says is the point.
 func (m Model) bodyOf(n state.Node) []string {
+	room := m.nodeBodyHeight(n)
 	if n.HasSession() {
-		return m.previews[n.ID]
+		lines := m.previews[n.ID]
+		if len(lines) > room {
+			return lines[len(lines)-room:]
+		}
+		return lines
 	}
-	return noteLines(n.Note)
+	lines := noteLines(n.Note)
+	if len(lines) > room {
+		return lines[:room]
+	}
+	return lines
 }
 
 // card is a node's rendering on the map: a border carrying its title, the body
@@ -471,13 +486,17 @@ func (m Model) bodyOf(n state.Node) []string {
 // persisted; nodes are.
 func card(n state.Node, selected, dead, unread bool, body int, content []string) []string {
 	style := cardStyle
+	accented, hasAccent := accent(n.Colour)
 	switch {
 	case selected:
-		// Selection outranks dimming: a cursor you cannot find is worse than a
-		// card that looks livelier than it is, and the badge still says dead.
+		// Selection outranks both the accent and the dimming: a cursor you
+		// cannot find is worse than a card drawn in the wrong colour, and the
+		// badge still says dead.
 		style = selectedStyle
 	case dead:
 		style = deadStyle
+	case hasAccent:
+		style = accented
 	}
 	// The status dot is the node's liveness (§8), and a note has none — so a
 	// note's card carries no badge at all rather than a badge that means
@@ -495,9 +514,21 @@ func card(n state.Node, selected, dead, unread bool, body int, content []string)
 	if !n.HasSession() {
 		lead, trail = "╭─ ", kindLabel(n.Kind)
 	}
+	// Tags sit at the right-hand end of the top border and take what the title
+	// leaves: a tag that squeezed a node's name down to an ellipsis would cost
+	// the card the one thing that says which node it is. Below a few cells
+	// there is no room to say anything, so the tags go rather than shrink.
+	title := truncate(n.Title, cardWidth-lipgloss.Width(lead)-3)
+	top := "─╮"
+	if tags := tagLabel(n.Tags); tags != "" {
+		spare := cardWidth - lipgloss.Width(lead) - lipgloss.Width(title) - tagOverhead
+		if spare >= minTagWidth {
+			top = " " + truncate(tags, spare) + " ─╮"
+		}
+	}
 
 	lines := make([]string, 0, body+2)
-	lines = append(lines, style.Render(border(lead, n.Title, "─╮")))
+	lines = append(lines, style.Render(border(lead, title, top)))
 	for i := 0; i < body; i++ {
 		text := ""
 		if i < len(content) {
@@ -571,6 +602,15 @@ func truncate(s string, width int) string {
 	return kept.String() + "…"
 }
 
+// tagLabel is a node's tags as a card draws them. The hash is the card's, not
+// the tag's — it is what makes a label on a border read as a tag.
+func tagLabel(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	return "#" + strings.Join(tags, " #")
+}
+
 func kindLabel(k state.Kind) string {
 	switch k {
 	case state.KindShell:
@@ -606,6 +646,13 @@ func age(t time.Time) string {
 
 func maxInt(a, b int) int {
 	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
 		return a
 	}
 	return b
