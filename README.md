@@ -128,11 +128,21 @@ Every card on the map is the same height — the hungriest node's — so one lar
 the rest, and the small one beside it still shows nothing. See
 [ADR 0003](docs/adr/0003-every-card-on-the-map-is-the-same-height.md).
 
-The border carries the lot: the status dot and the title along the top with the tags at its
-right-hand end, the kind and the session's age along the bottom, and the accent colour on
-the border itself. A card is 22 cells wide, so the title takes what it needs and the tags
-take what is left — below a few cells the tags go rather than shrink, because the name is
-what says which node this is.
+The border carries the lot: the status dot and the title along the top, the kind, the
+session's age and the tags along the bottom, and the accent colour on the border itself.
+
+```
+╭─ ● api-server ─────╮
+│ $ tail -f log      │
+│ 200 GET /health 3… │
+╰─ sh · 2h ─ #infra ─╯
+```
+
+The tags are on the bottom border rather than beside the title because a card is 22 cells
+wide and that is not enough for both — the kind and the age leave room where a real title
+does not. The kind and the age never give way; the tags take what is left, are cut with an
+ellipsis when that is not enough, and go entirely below a few cells. See
+[ADR 0009](docs/adr/0009-tags-live-on-the-bottom-border.md).
 
 Movement never refuses. `L` into an occupied cell shoves the occupant one cell right, and
 whatever is behind it too: one collision rule, which groups will reuse unchanged.
