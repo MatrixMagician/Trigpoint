@@ -139,8 +139,11 @@ interface — so the suite needs no special environment. Tests that do want tmux
 lifecycle, the attach handoff) run against a private `tmux -L` socket and skip themselves
 when tmux is absent, so they can never touch the sessions you are working in.
 
-The handoff also has a manual matrix that no test can cover: see
-[`docs/handoff-test-matrix.md`](docs/handoff-test-matrix.md).
+The attach handoff is exercised end to end on a real pty and a real tmux server, including
+the terminal-settings comparison either side of the round trip. What is left for a person —
+colours as rendered, reflow, scrollback, one emulator at a time — is
+[`docs/handoff-test-matrix.md`](docs/handoff-test-matrix.md), which also records which
+terminals have not been tried yet.
 
 Before changing anything, read [`CONTEXT.md`](CONTEXT.md) for the vocabulary the code and
 the issues use, and [`docs/adr/`](docs/adr) for the decisions already taken.
