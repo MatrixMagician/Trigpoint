@@ -71,7 +71,7 @@ func TestNAndXAgainstRealTmux(t *testing.T) {
 // TestEnterOnASessionThatDiedReportsRatherThanHanging kills a node's session
 // behind the map's back, which is what a reboot, a `tmux kill-server`, or an
 // `exit` typed inside the session all look like from here.
-func TestEnterOnASessionThatDiedReportsRatherThanHanging(t *testing.T) {
+func TestEnterOnASessionThatDiedOffersRespawnRatherThanHanging(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux is not installed")
 	}
@@ -82,7 +82,7 @@ func TestEnterOnASessionThatDiedReportsRatherThanHanging(t *testing.T) {
 		{ID: "k4f2", Kind: state.KindShell, Title: "api"},
 	}}
 	session := tmux.SessionName("main", "k4f2")
-	if err := cli.Create(session, ws.Dir, nil); err != nil {
+	if err := cli.Create(session, ws.Dir, "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if err := cli.Kill(session); err != nil {
@@ -95,8 +95,8 @@ func TestEnterOnASessionThatDiedReportsRatherThanHanging(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("Enter should not hand the terminal to a session that is gone")
 	}
-	if !strings.Contains(next.status, "api") {
-		t.Errorf("the status should name the node with no session, got %q", next.status)
+	if view := next.View(); !strings.Contains(view, "Respawn") || !strings.Contains(view, "api") {
+		t.Errorf("Enter should offer to respawn the named node, got:\n%s", view)
 	}
 	// The binding is only installed as part of a handoff, so a refused attach
 	// must not have left one behind.
@@ -120,7 +120,7 @@ func TestAPreviewOfARealSessionReachesTheCard(t *testing.T) {
 		{ID: "k4f2", Kind: state.KindShell, Title: "api"},
 	}}
 	session := tmux.SessionName("main", "k4f2")
-	if err := cli.Create(session, ws.Dir, nil); err != nil {
+	if err := cli.Create(session, ws.Dir, "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if err := exec.Command("tmux", "-L", cli.Socket, "send-keys", "-t", "="+session+":",
@@ -152,4 +152,83 @@ func TestAPreviewOfARealSessionReachesTheCard(t *testing.T) {
 	if !strings.Contains(view, "\x1b[31m") {
 		t.Errorf("the preview should keep the colour it was captured in, got:\n%q", view)
 	}
+}
+
+// TestReconciliationAgainstRealTmux is §9.2 end to end: a map that has lost its
+// state file, opened against a tmux server that still has the sessions on it.
+func TestReconciliationAgainstRealTmux(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+	cli := tmux.CLI{Socket: "trig-test-reconcile"}
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", cli.Socket, "kill-server").Run() })
+
+	// One session that outlived its node, one node that outlived its session.
+	orphan := tmux.SessionName("main", "zzz")
+	if err := cli.Create(orphan, t.TempDir(), "", map[string]string{
+		"TRIG_WORKSPACE": "main",
+		"TRIG_NODE_ID":   "zzz",
+		"TRIG_NODE_KIND": "shell",
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// And a stranger's session, which reconciliation has no business touching.
+	if err := exec.Command("tmux", "-L", cli.Socket, "new-session", "-d", "-s", "someone-elses-work").Run(); err != nil {
+		t.Fatalf("setting up a foreign session: %v", err)
+	}
+
+	ws := state.Workspace{Name: "main", Dir: t.TempDir(), Nodes: []state.Node{
+		{ID: "k4f2", Kind: state.KindShell, Title: "api"},
+		{ID: "nnn", Kind: state.KindNote, Title: "todo", Note: "buy milk"},
+	}}
+	m := New(config.Default(), ws, t.TempDir(), cli)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = reconciled(t, sized.(Model))
+
+	if !m.dead["k4f2"] {
+		t.Error("a node whose session tmux does not have is dead")
+	}
+	if m.dead["nnn"] {
+		t.Error("a note has no session, so it is never dead")
+	}
+	node, ok := m.node("zzz")
+	if !ok {
+		t.Fatalf("the orphan session should have become a card, got %+v", m.ws.Nodes)
+	}
+	if node.Kind != state.KindShell || m.dead["zzz"] {
+		t.Errorf("the reconstructed node should be a live shell, got %+v (dead: %v)", node, m.dead["zzz"])
+	}
+	if len(m.ws.Nodes) != 3 {
+		t.Errorf("a foreign session is nobody's orphan, got %+v", m.ws.Nodes)
+	}
+
+	// And respawning the dead one brings its session back under its own name.
+	m = moveTo(t, m, m.mustNode(t, "k4f2").Pos)
+	m, _ = press(t, m, tea.KeyEnter)
+	m, cmd := typeKeys(t, m, "y")
+	m = settle(t, m, cmd)
+
+	if m.status != "" {
+		t.Fatalf("respawn reported %q", m.status)
+	}
+	alive, err := cli.Exists(tmux.SessionName("main", "k4f2"))
+	if err != nil {
+		t.Fatalf("Exists: %v", err)
+	}
+	if !alive {
+		t.Error("respawn should leave a live session under the node's own name")
+	}
+	if m.dead["k4f2"] {
+		t.Error("a respawned node is alive again")
+	}
+}
+
+// mustNode is the node with this id, or a failed test.
+func (m Model) mustNode(t *testing.T, id string) state.Node {
+	t.Helper()
+	node, ok := m.node(id)
+	if !ok {
+		t.Fatalf("no node %q on the map", id)
+	}
+	return node
 }

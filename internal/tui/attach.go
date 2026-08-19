@@ -3,11 +3,11 @@ package tui
 import (
 	"cmp"
 	"errors"
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/MatrixMagician/Trigpoint/internal/state"
 	"github.com/MatrixMagician/Trigpoint/internal/tmux"
 )
 
@@ -36,8 +36,10 @@ func (m Model) attach() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if !alive {
-		m.status = fmt.Sprintf("%s has no live session to attach to", flatten(node.Title))
-		return m, nil
+		// Nothing to hand the terminal to, so Enter means the other thing it
+		// can mean on a node: offer to start it again (§9.2). The card is
+		// corrected here too — the map believed this node alive until now.
+		return m.markDead(node.ID).confirmRespawn(node), nil
 	}
 
 	// Both tmux calls happen on the keystroke rather than in a command: the
@@ -86,4 +88,29 @@ func exitErr(err error, stderr string) error {
 		return errors.New(complaint)
 	}
 	return err
+}
+
+// confirmRespawn puts the respawn question up. The node is named by id, for the
+// same reason the kill prompt is: whatever moves under the cursor between the
+// question and the answer, the answer is about the node that was asked about.
+func (m Model) confirmRespawn(node state.Node) Model {
+	m.mode, m.respawning = modeConfirmRespawn, node.ID
+	return m
+}
+
+func (m Model) updateConfirmRespawn(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		m.mode = modeNormal
+		id := m.respawning
+		m.respawning = ""
+		node, ok := m.node(id)
+		if !ok {
+			return m, nil
+		}
+		return m.respawn(node)
+	case "n", "N", "esc", "q":
+		m.mode, m.respawning = modeNormal, ""
+	}
+	return m, nil
 }

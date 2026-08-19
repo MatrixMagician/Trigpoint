@@ -15,7 +15,7 @@ work; the rest of the spec does not exist yet.
 | --- | --- | --- |
 | M0 | Skeleton — config, workspace store, `trig doctor` | done |
 | M1 | Nodes on a map — create/kill shell nodes, cursor and node movement, attach handoff | in progress (rename still to come) |
-| M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | in progress (previews done) |
+| M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | in progress (previews, reconciliation done) |
 | M3 | Organisation — colours, tags, sizes, groups, filter, palette | to do |
 | M4 | Agents — agent nodes, status badges, attention jump | to do |
 | M5 | Polish and release | to do |
@@ -73,10 +73,10 @@ What is bound today:
 | `H J K L` | Move the selected node one cell, shoving whatever is in the way |
 | `zz` | Centre the viewport on the cursor |
 | `0` | Jump to the origin |
-| `Enter` | Attach to the node under the cursor — the whole terminal, handed over. On a note, edit its body in `$EDITOR` |
+| `Enter` | Attach to the node under the cursor — the whole terminal, handed over. On a dead node, offer to respawn it. On a note, edit its body in `$EDITOR` |
 | `n` | New shell node at the nearest free cell to the cursor |
 | `N` | New note — a rendered markdown card with no session behind it |
-| `x` | Kill the node under the cursor and its session (asks first; a note is just removed) |
+| `x` | Kill the node under the cursor and its session (asks first; a note or a dead node is just removed) |
 | `q` / `Ctrl-C` | Quit — sessions keep running |
 
 `Enter` hands the entire terminal to that node's tmux session, so TUI apps, 256-colour
@@ -103,6 +103,36 @@ whatever is behind it too: one collision rule, which groups will reuse unchanged
 
 The cursor position and the viewport are saved with the workspace, so reopening Trigpoint
 puts you back where you were looking.
+
+## Dead nodes and reconciliation
+
+Trigpoint reopens on a map that tells the truth about what is still running. Every node with
+a session is checked against tmux: a node whose session is there is alive, and a node whose
+session is gone — a reboot, a `tmux kill-server`, an `exit` typed inside it — is **dead**. A
+dead card is dimmed and carries a `✗` instead of the status dot, and keeps everything else it
+is: name, colour, tags, and position, so the map does not rearrange itself after a reboot.
+
+`Enter` on a dead node offers to respawn it: a fresh session in the node's own working
+directory, falling back to the workspace's, re-running its command if it has one. The node
+keeps its id, so it keeps its session name too — respawning is not creating a new node. `x`
+on a dead node asks to remove the card rather than to kill anything, because there is nothing
+left to kill.
+
+A session under the `trig_` prefix with no node behind it is reconstructed as a card, from
+the `TRIG_WORKSPACE` / `TRIG_NODE_ID` / `TRIG_NODE_KIND` that every session Trigpoint starts
+carries in its own environment. That is what gets your map back after a lost or corrupted
+state file. Sessions belonging to another workspace are left to the map that owns them, and
+sessions outside the prefix are left alone entirely — adopting those is `A`, which is not
+built yet.
+
+Liveness is worked out from tmux every time and never written to disk: a stored flag would be
+stale from the moment the machine rebooted, which is exactly when the map is most relied on.
+The same pass runs at startup, whenever tmux says the session list changed, and on the slow
+tick — so a node killed from inside tmux goes dead on the map without waiting for a restart.
+See [ADR 0006](docs/adr/0006-liveness-is-derived-not-stored.md).
+
+Notes are excluded from all of it. A note has no session, so it is never alive, never dead,
+and carries no badge.
 
 ## Live previews
 

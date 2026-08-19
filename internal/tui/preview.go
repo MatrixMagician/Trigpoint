@@ -71,8 +71,15 @@ func (m Model) updatePreview(msg tea.Msg) (Model, tea.Cmd, bool) {
 		return m.withPreviews(msg.previews), nil, true
 
 	case refreshTickMsg:
+		// The slow tick is the fallback for everything the event stream missed,
+		// and reconciliation is part of that: with the control-mode client down
+		// this is the only thing that ever notices a session has gone (§5.3).
 		next, cmd := m.markDirty(m.visible()...)
-		return next, tea.Batch(cmd, m.slowTick()), true
+		return next, tea.Batch(cmd, m.slowTick(), m.reconcile()), true
+
+	case reconciledMsg:
+		next, cmd := m.applyReconciled(msg)
+		return next, cmd, true
 	}
 	return m, nil, false
 }
@@ -82,7 +89,11 @@ func (m Model) updatePreview(msg tea.Msg) (Model, tea.Cmd, bool) {
 // means everything on screen.
 func (m Model) onEvent(ev tmux.Event) (Model, tea.Cmd) {
 	if ev.Kind == tmux.Sessions {
-		return m.markDirty(m.visible()...)
+		// The session list changed, which is exactly the question
+		// reconciliation asks: a node killed from inside tmux goes dead on the
+		// map here rather than at the next launch.
+		next, cmd := m.markDirty(m.visible()...)
+		return next, tea.Batch(cmd, m.reconcile())
 	}
 	for _, n := range m.visibleNodes() {
 		if n.HasSession() && tmux.SessionName(m.ws.Name, n.ID) == ev.Session {
@@ -132,7 +143,9 @@ func (m Model) capture() (Model, tea.Cmd) {
 	// Visibility is checked here and not only when the card was marked: the
 	// viewport can move between the event and the tick.
 	for _, n := range m.visibleNodes() {
-		if !m.dirty[n.ID] || !n.HasSession() {
+		if !m.dirty[n.ID] || !n.HasSession() || m.dead[n.ID] {
+			// A dead node has no session to capture; the card keeps the last
+			// snapshot taken, which is the honest thing a snapshot does.
 			continue
 		}
 		if lines := m.previewHeight(n); lines > 0 {
@@ -312,6 +325,7 @@ func (m Model) forget(id string) Model {
 		}
 		m.previews = previews
 	}
+	m = m.alive(id)
 	if m.dirty[id] {
 		dirty := make(map[string]bool, len(m.dirty))
 		for other := range m.dirty {

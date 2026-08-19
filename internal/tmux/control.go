@@ -251,18 +251,13 @@ func push(out chan<- Event, ev Event) {
 // or no sessions of ours on it, is an answer rather than a failure — it is what
 // an empty map looks like from here.
 func (c CLI) firstSession() string {
-	out, err := c.command("list-sessions", "-F", "#{session_name}").Output()
+	names, err := c.List()
 	if err != nil {
 		return ""
 	}
-	// Split by line and not by word: a session name may hold spaces. Trigpoint
-	// will not make one (state.ValidName refuses them), but the server carries
-	// everyone's sessions, and half a stranger's name can still start with the
-	// prefix — which would send the monitor attaching to something that is not
-	// there, over and over.
 	ours := []string(nil)
-	for line := range strings.SplitSeq(string(out), "\n") {
-		if name := strings.TrimRight(line, "\r"); Ours(name) {
+	for _, name := range names {
+		if Ours(name) {
 			ours = append(ours, name)
 		}
 	}

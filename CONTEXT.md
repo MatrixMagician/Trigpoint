@@ -125,11 +125,15 @@ _Avoid_: running, stopped, closed
 
 **Respawn**:
 Starting a fresh session for a dead node, in its working directory, re-running its command.
-The node keeps its identity — respawning is not creating a new node.
+The node keeps its identity — respawning is not creating a new node, and in particular keeps
+its id, which is what its session is named after.
 
 **Reconciliation**:
-The startup pass that matches persisted nodes against live sessions, deciding what is
-alive, what is dead, and what exists in tmux with no node to explain it.
+The pass that matches persisted nodes against live sessions, deciding what is alive, what is
+dead, and what exists in tmux with no node to explain it. It runs at startup, on every change
+to the session list, and on the slow tick — liveness is derived every time and never stored,
+because a stored flag is stale from the moment the machine reboots. See
+[ADR 0006](docs/adr/0006-liveness-is-derived-not-stored.md).
 
 **Adopted session**:
 A tmux session Trigpoint did not create, mapped onto the map as a node. Adoption renames

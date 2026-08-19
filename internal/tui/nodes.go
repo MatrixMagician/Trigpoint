@@ -19,9 +19,16 @@ import (
 // identity and position; everything a session is happens behind this seam,
 // which also lets the view be tested without a tmux server.
 type Sessions interface {
-	Create(session, dir string, env map[string]string) error
+	// Create starts a session; an empty cmd leaves it on a login shell.
+	Create(session, dir, cmd string, env map[string]string) error
 	Kill(session string) error
 	Exists(session string) (bool, error)
+	// List names every session on the server, ours and everyone else's, which
+	// is what reconciliation classifies the map against (§9.2).
+	List() ([]string, error)
+	// Env is a session's own provenance, which is what lets a session describe
+	// the node it belongs to when the workspace file no longer can.
+	Env(session string) (map[string]string, error)
 	// Handoff prepares an attach: the command that takes the terminal, and the
 	// release to run once it has given the terminal back.
 	Handoff(session, detachKey string) (*exec.Cmd, func() error, error)
@@ -116,15 +123,31 @@ func (m Model) createNode() (tea.Model, tea.Cmd) {
 	}
 	m.pending = append(append([]state.Node(nil), m.pending...), node)
 
-	sessions, workspace, dir := m.sessions, m.ws.Name, m.ws.Dir
+	sessions, workspace, dir := m.sessions, m.ws.Name, m.dirOf(node)
 	return m, func() tea.Msg {
-		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, map[string]string{
-			"TRIG_WORKSPACE": workspace,
-			"TRIG_NODE_ID":   node.ID,
-			"TRIG_NODE_KIND": string(node.Kind),
-		})
+		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, node.Cmd, provenance(workspace, node))
 		return nodeCreatedMsg{node: node, err: err}
 	}
+}
+
+// provenance is what a session carries about the node behind it (§5.2). It is
+// what reconciliation reads back when the workspace file has been lost, so a
+// session started here and a session respawned later have to say the same thing.
+func provenance(workspace string, n state.Node) map[string]string {
+	return map[string]string{
+		"TRIG_WORKSPACE": workspace,
+		"TRIG_NODE_ID":   n.ID,
+		"TRIG_NODE_KIND": string(n.Kind),
+	}
+}
+
+// dirOf is where a node's session starts: its own working directory, or the
+// workspace's when it has none of its own.
+func (m Model) dirOf(n state.Node) string {
+	if n.Dir != "" {
+		return n.Dir
+	}
+	return m.ws.Dir
 }
 
 func (m Model) updateConfirmKill(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -140,6 +163,13 @@ func (m Model) updateConfirmKill(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !node.HasSession() {
 			// Removing the node is the whole operation — there is no session
 			// behind it to ask tmux about, let alone kill.
+			//
+			// A node the map believes dead is deliberately not short-circuited
+			// here. Kill already treats an absent session as the outcome that
+			// was asked for, so routing every card through it costs a no-op
+			// subprocess — and skipping it on a dead flag that turned out to be
+			// wrong would abandon a live session with no card left to find it
+			// by.
 			m.ws.Nodes = without(m.ws.Nodes, id)
 			return m.forget(id).save(), nil
 		}
@@ -204,6 +234,15 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		m.ws.Nodes = nodes
 		return m.save(), nil, true
+
+	case respawnedMsg:
+		if msg.err != nil {
+			// The node is exactly as dead as it was, and now the map says why.
+			m.status = msg.err.Error()
+			return m, nil, true
+		}
+		next, cmd := m.alive(msg.id).markDirty(msg.id)
+		return next, cmd, true
 
 	case nodeKilledMsg:
 		if msg.err != nil {
@@ -332,6 +371,17 @@ func (m Model) nodeBodyHeight(n state.Node) int {
 var (
 	cardStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	selectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
+	// A dead card is dimmed, but dimming is invisible on a terminal with no
+	// colour — so the badge, and not the colour, is what actually says dead.
+	deadStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Faint(true)
+)
+
+// Badges are a node's liveness on its card (§8). Dead is its own mark rather
+// than a colour of the live one: a node whose session is gone is not in a state
+// an agent could ever report.
+const (
+	liveBadge = "●"
+	deadBadge = "✗"
 )
 
 // cards renders the occupied region of the map, one card per node, laid out on
@@ -354,7 +404,7 @@ func (m Model) cards() string {
 			node, ok := at[cell]
 			drawn := []string(nil)
 			if ok {
-				drawn = card(node, cell == m.ws.Viewport.Cursor, body, m.bodyOf(node))
+				drawn = card(node, cell == m.ws.Viewport.Cursor, m.dead[node.ID], body, m.bodyOf(node))
 			}
 			for i := range lines {
 				if col > minCell.Col {
@@ -406,15 +456,24 @@ func (m Model) bodyOf(n state.Node) []string {
 // card is a node's rendering on the map: a border carrying its title, the body
 // lines beneath it, and a border carrying its kind and age. Cards are never
 // persisted; nodes are.
-func card(n state.Node, selected bool, body int, content []string) []string {
+func card(n state.Node, selected, dead bool, body int, content []string) []string {
 	style := cardStyle
-	if selected {
+	switch {
+	case selected:
+		// Selection outranks dimming: a cursor you cannot find is worse than a
+		// card that looks livelier than it is, and the badge still says dead.
 		style = selectedStyle
+	case dead:
+		style = deadStyle
 	}
 	// The status dot is the node's liveness (§8), and a note has none — so a
 	// note's card carries no badge at all rather than a badge that means
 	// nothing.
-	lead, trail := "╭─ ● ", kindLabel(n.Kind)+age(n.CreatedAt)
+	badge := liveBadge
+	if dead {
+		badge = deadBadge
+	}
+	lead, trail := "╭─ "+badge+" ", kindLabel(n.Kind)+age(n.CreatedAt)
 	if !n.HasSession() {
 		lead, trail = "╭─ ", kindLabel(n.Kind)
 	}

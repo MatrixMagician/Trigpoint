@@ -24,7 +24,13 @@ type fakeSessions struct {
 	captured   []captureCall
 	events     chan tmux.Event
 	output     map[string]string // what Capture hands back, by session
+	live       []string          // the sessions List reports as running
+	envs       map[string]map[string]string
+	enved      []string // the sessions the map asked for provenance
+	listed     int      // how many times the map has asked what is running
 	released   int
+	listErr    error
+	envErr     error
 	createErr  error
 	killErr    error
 	existsErr  error
@@ -53,15 +59,32 @@ func (f *fakeSessions) Watch(context.Context) <-chan tmux.Event { return f.event
 type createCall struct {
 	session string
 	dir     string
+	cmd     string
 	env     map[string]string
 }
 
-func (f *fakeSessions) Create(session, dir string, env map[string]string) error {
+func (f *fakeSessions) Create(session, dir, cmd string, env map[string]string) error {
 	if f.createErr != nil {
 		return f.createErr
 	}
-	f.created = append(f.created, createCall{session, dir, env})
+	f.created = append(f.created, createCall{session, dir, cmd, env})
 	return nil
+}
+
+func (f *fakeSessions) List() ([]string, error) {
+	f.listed++
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return f.live, nil
+}
+
+func (f *fakeSessions) Env(session string) (map[string]string, error) {
+	f.enved = append(f.enved, session)
+	if f.envErr != nil {
+		return nil, f.envErr
+	}
+	return f.envs[session], nil
 }
 
 type handoffCall struct {
@@ -455,7 +478,7 @@ func TestCardGeometrySurvivesWideRunes(t *testing.T) {
 	} {
 		// The title is used as the body too, so the body lines are held to the
 		// same width as the borders.
-		for _, line := range card(state.Node{Kind: state.KindNote, Title: title, Note: title}, false, 2, noteLines(title)) {
+		for _, line := range card(state.Node{Kind: state.KindNote, Title: title, Note: title}, false, false, 2, noteLines(title)) {
 			if w := lipgloss.Width(line); w != cardWidth {
 				t.Errorf("a card line of %q is %d cells wide, want %d: %q", title, w, cardWidth, line)
 			}
