@@ -408,8 +408,32 @@ func TestANoteIsSizedLikeAnyOtherCard(t *testing.T) {
 		t.Errorf("a large note asked for %d body lines, want %d", got, lines.L)
 	}
 	m, _ = typeKeys(t, m, "s") // large → small
-	if got := m.bodyHeight(); got != lines.S {
-		t.Errorf("a small note asked for %d body lines, want %d", got, lines.S)
+	if got := m.bodyHeight(); got != 1 {
+		t.Errorf("a small note asked for %d body lines, want the one it keeps", got)
+	}
+}
+
+// TestASmallNoteStillShowsALine is where a note parts company with a preview: a
+// small shell card shows nothing because its output is still in the session and
+// a peek reads it, but a note's body is the node, and a blank card would be
+// indistinguishable from an empty note.
+func TestASmallNoteStillShowsALine(t *testing.T) {
+	m, _, _ := mapWithOneNote(t, "buy milk\nand bread")
+	m, _ = typeKeys(t, m, "s") // medium → large
+	m, _ = typeKeys(t, m, "s") // large → small
+
+	body := m.bodyOf(m.ws.Nodes[0])
+	if len(body) != 1 {
+		t.Fatalf("a small note shows %d lines, want 1: %q", len(body), body)
+	}
+	if !strings.Contains(body[0], "buy milk") {
+		t.Errorf("the line it keeps should be the first: %q", body[0])
+	}
+
+	// An empty note is still an empty card: there is nothing being hidden.
+	empty, _, _ := mapWithOneNote(t, "")
+	if got := empty.nodeBodyHeight(empty.ws.Nodes[0]); got != 0 {
+		t.Errorf("an empty note asked for %d body lines, want none", got)
 	}
 }
 
@@ -493,5 +517,29 @@ func TestThePickedColourOutranksTheSelection(t *testing.T) {
 	m, _ = press(t, m, tea.KeyEsc)
 	if !m.drawnSelected(node) {
 		t.Error("closing the picker should give the card its selection back")
+	}
+}
+
+// TestThePickedColourReachesTheCard is the same rule as
+// TestThePickedColourOutranksTheSelection, asserted where it actually has to
+// hold: on the rendered frame. The seam test alone would pass with the colour
+// injected and then painted over.
+func TestThePickedColourReachesTheCard(t *testing.T) {
+	// termenv's profiles run 0 TrueColor, 1 ANSI256, 2 ANSI, 3 Ascii; the tests
+	// otherwise render with no colour at all, which is what makes this the one
+	// place the profile has to be said out loud. Orange is a 256-colour code,
+	// so anything coarser degrades it to a colour the palette also holds.
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(1)
+	t.Cleanup(func() { lipgloss.SetColorProfile(old) })
+
+	m, _, _ := newNodeModel(t, oneNode())
+	m, _ = typeKeys(t, m, "C")
+	m, _ = typeKeys(t, m, "j")
+
+	orange := colours[1]
+	if !strings.Contains(m.View(), orange.Code) {
+		t.Errorf("the card should be drawn in %s (%s) while the picker is on it:\n%q",
+			orange.Name, orange.Code, m.View())
 	}
 }

@@ -372,11 +372,17 @@ func (m Model) bodyHeight() int {
 // card that grew a body the moment its first output landed would move every
 // other card on the map with it. A note asks for what it has to show, capped by
 // its own card size so that one long note cannot cost the whole map its screen.
+//
+// A note keeps one line at the smallest size, where a shell card keeps none.
+// The difference is what the body is: a preview is a snapshot of something the
+// session still has, and peek reads it in full — a note's body is the node, and
+// a card showing none of it cannot be told from a note with nothing written in
+// it.
 func (m Model) nodeBodyHeight(n state.Node) int {
 	if n.HasSession() {
 		return m.previewHeight(n)
 	}
-	return minInt(len(noteLines(n.Note)), m.sizeLines(n))
+	return minInt(len(noteLines(n.Note)), maxInt(m.sizeLines(n), 1))
 }
 
 var (

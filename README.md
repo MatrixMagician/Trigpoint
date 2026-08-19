@@ -120,7 +120,9 @@ closed set of names.
 `s` cycles the card size, small → medium → large, which is how many preview lines the card
 shows — `preview_lines` in config, `0 / 4 / 10` by default. A small card shows none and is
 never captured at all, which is how a node you have finished watching stops costing a
-`capture-pane` per tick. A note is sized the same way: its size caps its body.
+`capture-pane` per tick. A note is sized the same way, except that a small one keeps its
+first line: a preview is a snapshot of output the session still has, and `Space` reads it in
+full, but a note's body is the node itself.
 
 Every card on the map is the same height — the hungriest node's — so one large card grows
 the rest, and the small one beside it still shows nothing. See
