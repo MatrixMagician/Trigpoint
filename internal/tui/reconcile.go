@@ -216,8 +216,9 @@ type respawnedMsg struct {
 // it is — because respawning is not creating a new node.
 func (m Model) respawn(node state.Node) (tea.Model, tea.Cmd) {
 	sessions, workspace, dir, stamp := m.sessions, m.ws.Name, m.dirOf(node), m.stamp()
+	env := provenance(workspace, node, m.statusDir)
 	return m, func() tea.Msg {
-		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, startCmd(node), provenance(workspace, node))
+		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, startCmd(node), env)
 		return respawnedMsg{mapStamp: stamp, id: node.ID, err: err}
 	}
 }

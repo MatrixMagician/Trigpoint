@@ -44,6 +44,9 @@ var commands = []command{
 	// most needs.
 	{label: "New agent node (picker: the configured presets, or a command of your own)", keys: []string{"a"}},
 	{label: "Adopt a session", hint: "A adopt", keys: []string{"A"}},
+	// No status-bar hint, for the same reason the agent picker has none: the
+	// bar drops hints from the end, and this one would cost "q quit".
+	{label: "Jump to the next node needing attention (needs-you, then unread)", keys: []string{"u"}},
 	{label: "Kill node", hint: "x kill", keys: []string{"x"}},
 	{label: "Quit Trigpoint", hint: "q quit", keys: []string{"q"}},
 	{label: "Rename node", hint: "r name", keys: []string{"r"}},

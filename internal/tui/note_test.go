@@ -280,7 +280,7 @@ func TestANoteCardIsNeverWiderThanACard(t *testing.T) {
 		"| a | table | with | columns |\n| - | - | - | - |\n| 1 | 2 | 3 | 4 |",
 		"日本語の長い行を折り返さなければならない場合はどうなるでしょうか",
 	} {
-		for _, line := range card(state.Node{Kind: state.KindNote, Title: "todo", Note: body}, false, false, false, false, "", 10, noteLines(body)) {
+		for _, line := range card(state.Node{Kind: state.KindNote, Title: "todo", Note: body}, false, false, false, badgeMark{}, "", 10, noteLines(body)) {
 			if w := lipgloss.Width(line); w != cardWidth {
 				t.Errorf("a card line for %q is %d cells wide, want %d: %q", body, w, cardWidth, line)
 			}
@@ -332,11 +332,11 @@ func TestRenderedNotesAreCached(t *testing.T) {
 // apply to notes, so the status dot every other card carries would be a badge
 // that means nothing.
 func TestANoteCardCarriesNoBadge(t *testing.T) {
-	note := card(state.Node{Kind: state.KindNote, Title: "todo"}, false, false, false, false, "", 0, nil)
+	note := card(state.Node{Kind: state.KindNote, Title: "todo"}, false, false, false, badgeMark{}, "", 0, nil)
 	if strings.Contains(note[0], "●") {
 		t.Errorf("a note is never alive or dead, so it carries no badge: %q", note[0])
 	}
-	shell := card(state.Node{Kind: state.KindShell, Title: "api"}, false, false, false, false, "", 0, nil)
+	shell := card(state.Node{Kind: state.KindShell, Title: "api"}, false, false, false, badgeMark{glyph: liveBadge}, "", 0, nil)
 	if !strings.Contains(shell[0], "●") {
 		t.Errorf("a shell node should still carry its status dot: %q", shell[0])
 	}

@@ -131,7 +131,7 @@ func TestACardSaysWhichGroupItIsIn(t *testing.T) {
 	}
 
 	node, _ := m.node("aaa")
-	lines := card(node, false, false, false, false, m.groupOf(node), 0, nil)
+	lines := card(node, false, false, false, m.badgeOf(node), m.groupOf(node), 0, nil)
 	if bottom := lines[len(lines)-1]; !strings.Contains(bottom, "infra") {
 		t.Errorf("a member's bottom border should name its group, got %q", bottom)
 	}
@@ -278,7 +278,7 @@ func TestANewGroupIsNotDrawnInsideAnother(t *testing.T) {
 
 func TestAGroupNameDoesNotCostACardItsTags(t *testing.T) {
 	n := state.Node{ID: "k4f2", Kind: state.KindShell, Title: "api", Tags: []string{"prod"}}
-	lines := card(n, false, false, false, false, "infrastructure", 0, nil)
+	lines := card(n, false, false, false, badgeMark{glyph: liveBadge}, "infrastructure", 0, nil)
 
 	bottom := lines[len(lines)-1]
 	if !strings.Contains(bottom, "#") {

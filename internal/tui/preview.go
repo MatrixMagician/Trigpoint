@@ -348,7 +348,7 @@ func (m Model) forget(id string) Model {
 		}
 		m.previews = previews
 	}
-	m = m.alive(id).read(id).pruneSelection()
+	m = m.alive(id).read(id).forgetReport(id).pruneSelection()
 	if m.dirty[id] {
 		dirty := make(map[string]bool, len(m.dirty))
 		for other := range m.dirty {

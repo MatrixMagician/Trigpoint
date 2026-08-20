@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/MatrixMagician/Trigpoint/internal/state"
+	"github.com/MatrixMagician/Trigpoint/internal/status"
 )
 
 // mapStamp marks a message with the map it is an answer about. Every question
@@ -103,7 +104,8 @@ func (m Model) open(name string) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.ws, m.status = ws, ""
-	m.previews, m.dirty, m.unread, m.dead = nil, nil, nil, nil
+	m.previews, m.dirty, m.unread, m.dead, m.reports = nil, nil, nil, nil, nil
+	m.polled = false
 	// The filter goes with them. It is a way of looking at the map being left,
 	// and carrying it over would narrow a map nobody filtered — and could hide
 	// the very card the cursor arrives from the file on (§7.1).
@@ -232,6 +234,10 @@ func (m Model) updateConfirmDeleteWorkspace(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		if err := state.Remove(m.stateDir, name); err != nil {
 			m.status = err.Error()
 			return m, nil
+		}
+		// Its nodes went with it, and a report is about a node (§8).
+		if err := status.RemoveWorkspace(m.statusDir, name); err != nil {
+			m.status = err.Error()
 		}
 		if name != m.ws.Name {
 			return m, nil

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/MatrixMagician/Trigpoint/internal/state"
+	"github.com/MatrixMagician/Trigpoint/internal/status"
 	"github.com/MatrixMagician/Trigpoint/internal/tmux"
 )
 
@@ -128,8 +130,9 @@ func (m Model) createNode() (tea.Model, tea.Cmd) {
 	m.pending = append(append([]state.Node(nil), m.pending...), node)
 
 	sessions, workspace, dir := m.sessions, m.ws.Name, m.dirOf(node)
+	env := provenance(workspace, node, m.statusDir)
 	return m, func() tea.Msg {
-		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, startCmd(node), provenance(workspace, node))
+		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, startCmd(node), env)
 		return nodeCreatedMsg{node: node, err: err}
 	}
 }
@@ -137,12 +140,26 @@ func (m Model) createNode() (tea.Model, tea.Cmd) {
 // provenance is what a session carries about the node behind it (§5.2). It is
 // what reconciliation reads back when the workspace file has been lost, so a
 // session started here and a session respawned later have to say the same thing.
-func provenance(workspace string, n state.Node) map[string]string {
-	return map[string]string{
+func provenance(workspace string, n state.Node, statusDir string) map[string]string {
+	env := map[string]string{
 		"TRIG_WORKSPACE": workspace,
 		"TRIG_NODE_ID":   n.ID,
 		"TRIG_NODE_KIND": string(n.Kind),
 	}
+	// Where the agent reports what it is doing (§8). Only an agent node gets
+	// one: it is the only kind that reports agent status (CONTEXT.md, "Agent
+	// node"), and handing a shell node a status file would be inviting a badge
+	// onto a card that has no agent to earn it.
+	if n.Kind == state.KindAgent && statusDir != "" {
+		// The directory is made here so that an agent writing the file itself —
+		// the documented contract, and not everything has hooks that can shell
+		// out — does not have to create it first. Best effort: emit-status
+		// creates it too, and a status directory that cannot be made is a map
+		// without badges rather than a node that refuses to start.
+		_ = os.MkdirAll(statusDir, 0o700)
+		env["TRIG_STATUS_FILE"] = status.Path(statusDir, workspace, n.ID)
+	}
+	return env
 }
 
 // dirOf is where a node's session starts: its own working directory, or the
@@ -266,7 +283,11 @@ func (m Model) updateNodeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.status = msg.err.Error()
 			return m, nil, true
 		}
-		next, cmd := m.alive(msg.id).markDirty(msg.id)
+		// The old session's agent reported about a session that no longer
+		// exists, so its report goes with it — on disk as well as in hand, or
+		// the next poll would put it straight back and badge a fresh agent with
+		// what the last one said.
+		next, cmd := m.alive(msg.id).forgetReport(msg.id).markDirty(msg.id)
 		return next, cmd, true
 
 	case adoptableMsg:
@@ -496,7 +517,7 @@ func (m Model) cards() string {
 			drawn := []string(nil)
 			if ok {
 				drawn = card(m.shown(node), m.drawnSelected(node), m.isSelected(node.ID),
-					m.dead[node.ID], m.unread[node.ID], m.groupOf(node), body, m.bodyOf(node))
+					m.dead[node.ID], m.badgeOf(node), m.groupOf(node), body, m.bodyOf(node))
 			}
 			for i := range lines {
 				lines[i].WriteString(gap(col, top+1+i))
@@ -564,7 +585,10 @@ func (m Model) bodyOf(n state.Node) []string {
 // card is a node's rendering on the map: a border carrying its title, the body
 // lines beneath it, and a border carrying its kind and age. Cards are never
 // persisted; nodes are.
-func card(n state.Node, cursor, inSelection, dead, unread bool, group string, body int, content []string) []string {
+//
+// The badge arrives already composed (badgeOf): what three sources make of one
+// mark is a question about the map's state, and a card only draws it.
+func card(n state.Node, cursor, inSelection, dead bool, mark badgeMark, group string, body int, content []string) []string {
 	style := cardStyle
 	accented, hasAccent := accent(n.Colour)
 	switch {
@@ -584,19 +608,9 @@ func card(n state.Node, cursor, inSelection, dead, unread bool, group string, bo
 	case hasAccent:
 		style = accented
 	}
-	// The status dot is the node's liveness (§8), and a note has none — so a
-	// note's card carries no badge at all rather than a badge that means
-	// nothing.
-	badge := liveBadge
-	switch {
-	case dead:
-		// One badge per card, and a node whose session has gone has nothing
-		// left to produce the output an unread mark would be about.
-		badge = deadBadge
-	case unread:
-		badge = unreadBadge
-	}
-	lead, trail := "╭─ "+badge+" ", kindLabel(n.Kind)+age(n.CreatedAt)
+	// A note has no session, so no liveness and no agent status — its card
+	// carries no badge at all rather than a badge that means nothing.
+	lead, trail := "╭─ "+mark.glyph+" ", kindLabel(n.Kind)+age(n.CreatedAt)
 	if !n.HasSession() {
 		lead, trail = "╭─ ", kindLabel(n.Kind)
 	}
@@ -614,7 +628,7 @@ func card(n state.Node, cursor, inSelection, dead, unread bool, group string, bo
 	}
 
 	lines := make([]string, 0, body+2)
-	lines = append(lines, style.Render(border(cardWidth, lead, n.Title, "─╮")))
+	lines = append(lines, topBorder(style, mark, border(cardWidth, lead, n.Title, "─╮")))
 	for i := 0; i < body; i++ {
 		text := ""
 		if i < len(content) {
@@ -624,6 +638,31 @@ func card(n state.Node, cursor, inSelection, dead, unread bool, group string, bo
 	}
 	return append(lines, style.Render(border(cardWidth, footLead, trail, foot)))
 }
+
+// topBorder draws the top border, with the badge in the colour the agent's own
+// report gives it. The rest of the border keeps the card's style — the badge is
+// the one thing on a card that is coloured by something other than the node.
+//
+// Rendered in one piece where there is no badge colour, so a map with no agents
+// on it emits no more escape sequences than it did before there were any.
+func topBorder(style lipgloss.Style, mark badgeMark, plain string) string {
+	badge, ok := badgeStyles[mark.colour]
+	if !ok {
+		return style.Render(plain)
+	}
+	head := "╭─ "
+	return style.Render(head) + badge.Render(mark.glyph) + style.Render(strings.TrimPrefix(plain, head+mark.glyph))
+}
+
+// badgeStyles is built once, for the reason accentStyles is: a card asks for
+// its badge on every frame.
+var badgeStyles = func() map[string]lipgloss.Style {
+	styles := make(map[string]lipgloss.Style, len(statusColours))
+	for _, code := range statusColours {
+		styles[code] = lipgloss.NewStyle().Foreground(lipgloss.Color(code))
+	}
+	return styles
+}()
 
 // footLabel is what the bottom border carries after the kind and the age: the
 // group the node's cell falls inside, and then its tags. The group goes first
