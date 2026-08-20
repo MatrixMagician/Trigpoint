@@ -43,7 +43,7 @@ owns naming, layout, grouping, status, discovery, and workflow.
 5. Workspaces: independent maps per project, each with its own default working directory.
 6. Crash-only design: Trigpoint can be killed at any time; state is recovered from disk and
    from live tmux sessions on next launch.
-7. Single static binary, Linux first, macOS supported.
+7. Single static binary, Linux only in v1; macOS deferred (ADR 0019).
 
 ## 3. Non-goals (v1)
 
@@ -351,7 +351,7 @@ Everything scriptable; the TUI is a client of the same internal services.
 - **M4 — Agents.** Agent node kind, status-file contract, fsnotify watcher, badges,
   `u` attention jump, `trig init-hooks claude`, bell notification.
 - **M5 — Polish & release.** Full keymap remapping, `trig new/ls/attach` CLI, docs,
-  goreleaser static builds (linux/amd64, linux/arm64, darwin/arm64), demo GIF (vhs).
+  goreleaser static builds (linux/amd64, linux/arm64), demo GIF (vhs).
 
 Each milestone lands with tests and an updated README section, in the usual
 milestone-by-milestone Claude Code flow.
@@ -368,8 +368,10 @@ attach handoff wraps the ssh command. ControlMaster strongly recommended and che
 1. **Preview cost at scale.** Dozens of nodes × capture-pane could add tmux-server load.
    Mitigation: capture only viewport-visible cards, debounce, batch per tick. Measure in M2.
 2. **Attach handoff jank.** Terminal mode restore after child exit must be bulletproof
-   across kitty/alacritty/wezterm/foot/Terminal.app and inside-tmux nesting. Dedicated
-   M1 test matrix; treat any residual raw-mode corruption as release-blocking.
+   across kitty/alacritty/foot/Konsole/Ghostty and inside-tmux nesting. Dedicated M1 test
+   matrix; treat any residual raw-mode corruption as release-blocking. Verified both ways
+   on all five, 2026-08-20 (#27). wezterm and Terminal.app are off the list with macOS
+   (ADR 0019); what is left unrun is X11 and ssh.
 3. **Claude Code hook config drift.** Hook file formats change; `init-hooks` must merge,
    not overwrite, and `doctor` must validate. Keep the emit contract (JSON file) as the
    stable layer so hook plumbing can evolve independently.
