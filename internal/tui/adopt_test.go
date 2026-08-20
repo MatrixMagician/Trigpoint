@@ -142,7 +142,7 @@ func TestAdoptionStoresTheForeignNameRatherThanImposingThePrefix(t *testing.T) {
 	if node.Title != foreign {
 		t.Errorf("the card is titled after the session it adopted, got %q", node.Title)
 	}
-	if got := m.sessionOf(node); got != foreign {
+	if got := m.ws.SessionOf(node); got != foreign {
 		t.Errorf("an adopted node's session is the foreign one, got %q", got)
 	}
 }

@@ -49,7 +49,7 @@ func (m Model) peek() (tea.Model, tea.Cmd) {
 		return m.openPeek(node.ID, m.previews[node.ID]), nil
 	}
 
-	sessions, session := m.sessions, m.sessionOf(node)
+	sessions, session := m.sessions, m.ws.SessionOf(node)
 	return m, func() tea.Msg {
 		text, err := sessions.Capture(session, peekLines)
 		if err != nil {

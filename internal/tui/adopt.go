@@ -158,7 +158,7 @@ func (m Model) adopt(session string) (tea.Model, tea.Cmd) {
 	node := state.Node{
 		ID:      draft.NewNodeID(),
 		Kind:    state.KindShell,
-		Title:   clampRunes(sanitise(session), maxTitleLen),
+		Title:   state.ClampRunes(sanitise(session), state.MaxTitleLen),
 		Tags:    []string{adoptedTag},
 		Pos:     draft.NearestFreeCell(m.ws.Viewport.Cursor),
 		Session: session,
@@ -168,14 +168,4 @@ func (m Model) adopt(session string) (tea.Model, tea.Cmd) {
 	}
 	next, cmd := m.place(node).save().markDirty(node.ID)
 	return next, cmd
-}
-
-// sessionOf is the tmux session behind a node: the one Trigpoint names after
-// the node, or — for an adopted node — the foreign session's own name, which
-// adoption stores rather than imposes a prefix on (§9.3).
-func (m Model) sessionOf(n state.Node) string {
-	if n.Adopted() {
-		return n.Session
-	}
-	return tmux.SessionName(m.ws.Name, n.ID)
 }

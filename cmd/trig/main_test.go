@@ -69,7 +69,7 @@ func TestUnsafeWorkspaceNameIsRejectedBeforeAnythingIsWritten(t *testing.T) {
 }
 
 func TestHelpIsNotAnError(t *testing.T) {
-	for _, args := range [][]string{{"-h"}, {"doctor", "-h"}, {"emit-status", "-h"}, {"init-hooks", "-h"}} {
+	for _, args := range [][]string{{"-h"}, {"new", "-h"}, {"ls", "-h"}, {"attach", "-h"}, {"doctor", "-h"}, {"emit-status", "-h"}, {"init-hooks", "-h"}} {
 		cmd := exec.Command(build(t), args...)
 		cmd.Env = append(os.Environ(), "XDG_STATE_HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir())
 		out, err := cmd.CombinedOutput()

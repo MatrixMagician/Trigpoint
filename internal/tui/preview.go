@@ -104,7 +104,7 @@ func (m Model) onEvent(ev tmux.Event) (Model, tea.Cmd) {
 		return next, tea.Batch(cmd, m.reconcile())
 	}
 	for _, n := range m.ws.Nodes {
-		if !n.HasSession() || m.sessionOf(n) != ev.Session {
+		if !n.HasSession() || m.ws.SessionOf(n) != ev.Session {
 			continue
 		}
 		// Output arriving on a node is output you have not seen (§8) — unless
@@ -169,7 +169,7 @@ func (m Model) capture() (Model, tea.Cmd) {
 			continue
 		}
 		if lines := m.previewHeight(n); lines > 0 {
-			wants = append(wants, want{n.ID, m.sessionOf(n), lines})
+			wants = append(wants, want{n.ID, m.ws.SessionOf(n), lines})
 		}
 	}
 	m.dirty = nil

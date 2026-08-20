@@ -24,7 +24,7 @@ func (m Model) attach() (tea.Model, tea.Cmd) {
 	if !ok || m.handoff != "" {
 		return m, nil
 	}
-	session := m.sessionOf(node)
+	session := m.ws.SessionOf(node)
 
 	// tmux is asked here rather than trusted from the last render: a session
 	// that died in between would otherwise be handed a terminal it cannot use,

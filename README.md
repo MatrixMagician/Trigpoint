@@ -20,7 +20,7 @@ rest of the spec does not exist yet.
 | M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | done |
 | M3 | Organisation — colours, tags, sizes, workspaces, groups, filter, palette | in progress (group movement to come) |
 | M4 | Agents — agent nodes, status badges, attention jump, `trig init-hooks claude` | done |
-| M5 | Polish and release | to do |
+| M5 | Polish and release | in progress (`trig new`/`ls`/`attach` done) |
 
 [`SPEC.md`](SPEC.md) is the whole design; this README describes only what is built.
 
@@ -57,6 +57,10 @@ trig              # open the default workspace
 trig -w scratch   # open a named workspace
 trig doctor       # check this machine
 
+trig new -t api-server        # make a node without opening the map
+trig ls                       # list the nodes on a map
+trig attach api               # hand the terminal to one, skipping the map
+
 trig init-hooks claude                          # let Claude Code nodes report their status
 trig emit-status running "building the index"   # from inside an agent node
 ```
@@ -66,6 +70,61 @@ Workspaces share nothing; the default one is called `main` until you configure o
 name travels into the tmux session name `trig_<workspace>_<id>`, so it may not contain
 whitespace, a path separator, `.`, or `:` — everything tmux reads a session name back through
 uses one of those to mean something else.
+
+## The map from a script
+
+Everything the map does is scriptable, because the map view and the command line go through
+the same internal services — see
+[ADR 0017](docs/adr/0017-the-cli-and-the-map-share-one-node-service.md). A node made from a
+script is on the map the next time it opens, named, placed, and started exactly as `n` would
+have made it — with the map closed at the time, which is what these commands are for. A map
+view open on the same workspace holds the whole thing in memory and writes all of it, so it
+overwrites a node made underneath it: reconciliation then finds the session with no node and
+rebuilds a card named after its id, with the title, command, and directory gone.
+
+```sh
+trig new -t api-server                          # a shell node, in the default workspace
+trig new -w infra -t db -d ~/src/db             # on another map, in another directory
+trig new -k agent -t claude --cmd claude        # an agent node, which reports its status
+trig new -k note -t "release checklist"         # a note, which has no session at all
+```
+
+`new` prints the id it drew, so a script can keep hold of what it made. The session is
+started first and the map is written only once tmux has confirmed it, so a tmux that refuses
+leaves nothing behind.
+
+```
+$ trig ls
+ID    KIND  STATE  TITLE       AGENT
+kt7m  ag    live   claude      needs_you  may I run rm -rf build?
+qw49  sh    live   api-server
+b3xn  sh    dead   old-worker
+z7kd  note  -      release checklist
+```
+
+`STATE` is derived from tmux on the spot and never read out of the workspace file, exactly as
+the map derives it. A note shows `-`, because it has no session to be either way; a node
+shows `?` when tmux could not be asked at all, which is reported on stderr rather than turned
+into a map full of dead cards. A `running` report that has outlived
+`status_stale_after_min` is marked `running ?`, as its badge is on the map.
+
+`trig ls --json` is the same listing for a script, with a shape that gains fields and never
+loses them: `live` is `null` for both the `-` and the `?` above, `agent` is `null` for a node
+whose agent has never reported, and `agent.ts` is the stamp staleness is judged from.
+
+```sh
+trig ls --json | jq -r '.nodes[] | select(.agent.state == "needs_you") | .title'
+```
+
+`trig attach` hands the whole terminal to a node's session, with the same detach key back as
+the map's own handoff. The node is named by its id, by its exact title, or by any run of
+characters in the title — `trig attach asrv` finds `api-server`. A name that fits more than
+one node is refused rather than guessed at:
+
+```
+$ trig attach api
+trig: "api" names 2 nodes: api-server (qw49), api-worker (m8tj) — say which by its id, or by its whole title
+```
 
 ## Keys
 

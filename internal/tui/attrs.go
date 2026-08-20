@@ -160,7 +160,7 @@ func (m Model) typed(msg tea.KeyMsg, limit int) (Model, action) {
 			m.input = string(r[:len(r)-1])
 		}
 	case tea.KeyRunes, tea.KeySpace:
-		m.input = clampRunes(m.input+sanitise(string(msg.Runes)), limit)
+		m.input = state.ClampRunes(m.input+sanitise(string(msg.Runes)), limit)
 	}
 	return m, actTyping
 }
@@ -187,7 +187,7 @@ func (m Model) done() (Model, string, string) {
 }
 
 func (m Model) updateRename(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	m, act := m.typed(msg, maxTitleLen)
+	m, act := m.typed(msg, state.MaxTitleLen)
 	switch act {
 	case actCancel:
 		m, _, _ = m.done()
@@ -279,13 +279,4 @@ func parseTags(input string) []string {
 		}
 	}
 	return tags
-}
-
-// clampRunes cuts text to at most n runes. Runes and not cells: this is a bound on
-// what is stored, and the card does its own cutting to fit the width it has.
-func clampRunes(s string, n int) string {
-	if r := []rune(s); len(r) > n {
-		return string(r[:n])
-	}
-	return s
 }

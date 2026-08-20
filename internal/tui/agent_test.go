@@ -194,7 +194,7 @@ func TestAnAgentCardSaysItIsAnAgent(t *testing.T) {
 	}}
 	m, _, _ := newNodeModel(t, ws)
 
-	if view := m.View(); !strings.Contains(view, kindLabel(state.KindAgent)) {
+	if view := m.View(); !strings.Contains(view, state.KindAgent.Label()) {
 		t.Errorf("the card should say the node is an agent, got:\n%s", view)
 	}
 }
@@ -218,44 +218,6 @@ func TestARespawnRerunsTheStoredCommand(t *testing.T) {
 	}
 }
 
-func TestTheShellOutlivesTheAgent(t *testing.T) {
-	// An agent node is defined by having been started as one, not by having a
-	// live agent: tmux ends a session whose command exits, so the command it is
-	// given has to hand over to a shell rather than be the last thing running.
-	got := startCmd(state.Node{Kind: state.KindAgent, Cmd: "claude"})
-
-	if !strings.Contains(got, "claude") {
-		t.Errorf("start command = %q, want it to run the agent", got)
-	}
-	if !strings.Contains(got, "exec") || !strings.Contains(got, "SHELL") {
-		t.Errorf("start command = %q, want the shell to be left behind", got)
-	}
-}
-
-func TestAQuoteInACommandStaysInsideIt(t *testing.T) {
-	// The command reaches tmux as one shell word, so a quote in it must not be
-	// able to close that word and turn the rest into commands of its own.
-	got := startCmd(state.Node{Kind: state.KindAgent, Cmd: `claude -p 'hi'; rm -rf /`})
-
-	if strings.Contains(got, "'claude -p 'hi'") {
-		t.Errorf("start command = %q, want the quote escaped", got)
-	}
-	if !strings.HasPrefix(got, "sh -c '") || !strings.HasSuffix(got, "'") {
-		t.Errorf("start command = %q, want one quoted shell word", got)
-	}
-	// What sh is handed back, once the outer quoting is undone, is the command
-	// and nothing more.
-	if want := `claude -p 'hi'; rm -rf /`; !strings.Contains(strings.ReplaceAll(got, `'\''`, "'"), want) {
-		t.Errorf("start command = %q, want it to carry %q unchanged", got, want)
-	}
-}
-
-func TestAShellNodeStillGetsAPlainShell(t *testing.T) {
-	if got := startCmd(state.Node{Kind: state.KindShell}); got != "" {
-		t.Errorf("start command = %q, want a login shell", got)
-	}
-}
-
 func TestACommandTooLongToHoldIsRefused(t *testing.T) {
 	// A truncated title is a title; a truncated command is a different command,
 	// and one that would reach a shell half-quoted.
@@ -264,7 +226,7 @@ func TestACommandTooLongToHoldIsRefused(t *testing.T) {
 	m, _ = typeKeys(t, m, "a")
 	m, _ = typeKeys(t, m, "jj")
 	m, _ = press(t, m, tea.KeyEnter)
-	m, _ = typeKeys(t, m, "claude -p "+strings.Repeat("x", maxCmdLen))
+	m, _ = typeKeys(t, m, "claude -p "+strings.Repeat("x", state.MaxCmdLen))
 	m, cmd := press(t, m, tea.KeyEnter)
 
 	if cmd != nil {

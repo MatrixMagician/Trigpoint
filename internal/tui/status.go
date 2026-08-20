@@ -170,25 +170,17 @@ func (m Model) badgeOf(n state.Node) badgeMark {
 		return mark
 	}
 	mark.colour = statusColours[report.State]
-	if report.State == status.Running && m.staleReport(report) {
-		// Only running goes stale. The other three are reports of something
-		// that has finished happening, and an old one of those is not a report
-		// Trigpoint has any reason to stop trusting.
+	if m.staleReport(report) {
 		mark.glyph += staleBadge
 	}
 	return mark
 }
 
-// staleReport is whether a report has outlived the configured window. A window
-// of zero turns staleness off rather than marking every report the moment it
-// lands — it is a display rule, and switching it off costs nothing but the mark.
+// staleReport is whether a report has outlived the configured window. The rule
+// belongs to the status package, so that `trig ls` and the map agree about what
+// is still worth believing.
 func (m Model) staleReport(r status.Report) bool {
-	after := time.Duration(m.cfg.General.StatusStaleAfterMin) * time.Minute
-	// A report with no stamp has no age to have outlived the window. The stamp
-	// is the agent's own and the contract asks for one, but the minimal report
-	// an agent can write — the state and nothing else — is one Read accepts,
-	// and reading it as a report from the epoch would badge it stale for ever.
-	return after > 0 && !r.TS.IsZero() && time.Since(r.TS) > after
+	return r.Stale(time.Duration(m.cfg.General.StatusStaleAfterMin) * time.Minute)
 }
 
 // jumpAttention is `u`: the next node needing attention, needs-you before
