@@ -111,6 +111,9 @@ func (m Model) open(name string) (Model, tea.Cmd) {
 	// So does the selection, for the same reason the previews do: an id is only
 	// unique against the map it belongs to.
 	m.selection = nil
+	// And the held group: a group id belongs to the map it was drawn on, and a
+	// switch leaves the hand holding a rectangle that is no longer there.
+	m = m.release()
 	// The pending nodes belong to the map that asked for them, so they are
 	// dropped too — and a create that lands afterwards is dropped with them,
 	// because nothing on this map is waiting for it.

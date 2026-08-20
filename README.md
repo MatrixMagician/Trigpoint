@@ -86,6 +86,7 @@ What is bound today:
 | `x` | Kill the node under the cursor and its session (asks first; a note or a dead node is just removed). With a selection gathered, one confirmation names the count and kills all of them |
 | `v` | Visual select — gather the node under the cursor, or let go of one already gathered. The motion keys then extend the selection, and `H J K L`, `g`, `t`, and `x` act on all of it at once; `Esc` clears it |
 | `g` | Group — gathers the selection together and draws a named rectangle round it. With the cursor already inside a group, adds the selection to that one instead |
+| `V` | Hold the group under the cursor. While one is held, `H J K L` move the whole rectangle and everything inside it, `h j k l` move its far edge, `x` deletes it, `Esc` lets go |
 | `Tab` / `Shift-Tab` | Next / previous workspace, in name order |
 | `w` | Workspace picker — `j`/`k` to choose, `Enter` to open, `n` new, `x` delete |
 | `/` | Filter the map — narrows as you type, `Enter` keeps it, `Esc` clears it |
@@ -172,6 +173,15 @@ instead, moving each node into a free cell inside the rectangle and growing the 
 when there is none, shoving whoever stood where it grew to. Which of the two `g` does is
 decided by where the cursor is and nothing else; see
 [ADR 0012](docs/adr/0012-g-decides-by-where-the-cursor-is.md).
+
+`V` picks the group under the cursor up and holds it. While it is held the motion keys act
+on the rectangle instead of on a card: `H J K L` move it one cell, carrying every node that
+was inside it when you picked it up and shoving whoever stood in its path out from under it
+first — so a group can never drift over a bystander and quietly absorb it. `h j k l` move
+its far edge, growing the rectangle or shrinking it. `x` deletes the group and leaves its
+nodes exactly where they are; `Esc` lets go. A held group stops at another group rather than
+overlapping it, and the status bar says so. See
+[ADR 0013](docs/adr/0013-a-group-is-held-with-V.md).
 
 Because membership is containment, moving a node out of a rectangle takes it out of the
 group, and so does shrinking a rectangle past it. Member cards carry the group's name on

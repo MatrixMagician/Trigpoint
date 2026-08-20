@@ -89,13 +89,7 @@ func (m Model) createGroup(ids []string, title string) Model {
 func (m Model) joinGroup(g state.Group, ids []string) Model {
 	under, _ := m.selected()
 	nodes, rect := m.ws.Join(g.Rect, ids)
-	groups := append([]state.Group(nil), m.ws.Groups...)
-	for i := range groups {
-		if groups[i].ID == g.ID {
-			groups[i].Rect = rect
-		}
-	}
-	m.ws.Nodes, m.ws.Groups = nodes, groups
+	m.ws.Nodes, m.ws.Groups = nodes, m.withRect(g.ID, rect)
 	return m.chase(under.ID).save()
 }
 
@@ -129,12 +123,14 @@ func (m Model) groupOf(n state.Node) string {
 // groupStyles are how a group's rectangle is drawn: its walls in the accent
 // colour it carries, and the region inside them tinted with the same colour, so
 // the cards standing on it read as sitting on something rather than beside it.
-func groupStyles(g state.Group) (wall, tint lipgloss.Style) {
+// A held group's walls are drawn bold, so that the rectangle the motion keys
+// are about to move is the one on screen that looks picked up.
+func groupStyles(g state.Group, held bool) (wall, tint lipgloss.Style) {
 	code, ok := colourCode(g.Colour)
 	if !ok {
-		return cardStyle, lipgloss.NewStyle()
+		return cardStyle.Bold(held), lipgloss.NewStyle()
 	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(code)),
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(code)).Bold(held),
 		lipgloss.NewStyle().Background(lipgloss.Color(code))
 }
 
@@ -196,7 +192,7 @@ func (m Model) drawGroup(grid [][]string, min, max state.Cell, g state.Group) {
 	x1 := (rect.Max.Col - min.Col) * (cardWidth + cellGap)
 	y0 := (rect.Min.Row - min.Row) * m.cardRows()
 	y1 := (rect.Max.Row - min.Row) * m.cardRows()
-	wall, tint := groupStyles(g)
+	wall, tint := groupStyles(g, g.ID == m.holding)
 
 	for y := y0 + 1; y < y1; y++ {
 		for x := x0 + 1; x < x1; x++ {
@@ -235,4 +231,175 @@ func place(grid [][]string, x, y int, text string, style lipgloss.Style) {
 		}
 		x += width
 	}
+}
+
+// Holding a group (§7.3). `V` picks up the group under the cursor — the bigger
+// unit `v` gathers, exactly as it is in vi — and while it is held the motion
+// keys act on the rectangle rather than on a card: HJKL move it rigidly, hjkl
+// move its far edge. See docs/adr/0013-a-group-is-held-with-V.md.
+//
+// It is not a mode in the sense the prompts are, but it is the one state in
+// which a key means something other than what it means on the map, and the
+// status bar says so for as long as the group is held.
+const heldHints = "HJKL move · hjkl resize · x delete · esc done"
+
+// groupResizes are the far edge's own motions: l and j reach a column or a row
+// further out, h and k pull it back in. The rect's Min never moves, so a resize
+// is one edge and not two.
+// The arrows come along, as they do for cursor motion: a key that works on the
+// map and dies the moment a group is held would read as the terminal having
+// stopped listening.
+var groupResizes = map[string]state.Cell{
+	"l": {Col: 1}, "right": {Col: 1},
+	"h": {Col: -1}, "left": {Col: -1},
+	"j": {Row: 1}, "down": {Row: 1},
+	"k": {Row: -1}, "up": {Row: -1},
+}
+
+// hold is `V`: it picks up the group the cursor is standing in, or puts down
+// the one already held. The member set is taken here and not read again, which
+// is what makes a move carry what the gesture began on (SPEC §6).
+func (m Model) hold() (tea.Model, tea.Cmd) {
+	if m.holding != "" {
+		return m.release(), nil
+	}
+	g, ok := m.ws.GroupAt(m.ws.Viewport.Cursor)
+	if !ok {
+		// The cursor is in no group, and a hold on nothing would still take the
+		// motion keys away from the map.
+		return m, nil
+	}
+	// The selection goes: both want HJKL, and a held group is the newer answer
+	// to what those keys are about to move.
+	m.holding, m.held, m.selection = g.ID, m.ws.Members(g.Rect), nil
+	return m, nil
+}
+
+func (m Model) release() Model {
+	m.holding, m.held = "", nil
+	return m
+}
+
+// updateHeld is every key that means something while a group is held. Anything
+// else is left alone rather than falling through to the map: HJKL on a held
+// group is not HJKL on a card, and a key that did both would be a key nobody
+// could predict.
+func (m Model) updateHeld(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	looking := m.ws.Viewport.Offset
+	m.status = ""
+	key := msg.String()
+	switch {
+	case key == "V" || key == "esc":
+		return m.release(), nil
+	case key == "x":
+		// No confirmation: deleting a group kills nothing. The nodes inside it
+		// stay exactly where they are and simply stop being in anything.
+		return m.deleteGroup(), nil
+	default:
+		if d, ok := nodeMotions[key]; ok {
+			m = m.moveGroup(d)
+		} else if d, ok := groupResizes[key]; ok {
+			m = m.resizeGroup(d)
+		} else {
+			return m, nil
+		}
+	}
+	if m.ws.Viewport.Offset == looking {
+		return m, nil
+	}
+	// Off screen is where activity events are dropped, so a card the move
+	// scrolled to has been unwatched however recently it was captured — the
+	// same reason a motion that scrolls marks them (§8).
+	next, cmd := m.markDirty(m.visible()...)
+	return next, cmd
+}
+
+// moveGroup steps the held group one cell, carrying its members and shoving
+// whoever the rectangle is about to reach over.
+func (m Model) moveGroup(d state.Cell) Model {
+	nodes, rect, ok := m.ws.MoveGroup(m.holding, m.held, d)
+	if !ok {
+		m.status = "Another group is in the way."
+		return m
+	}
+	// The cursor rides along, for the same reason it rides a node move: it is
+	// the group being moved, not the cell it was over. Only if it was over the
+	// group at all — a create landing mid-gesture puts the cursor on the new
+	// card (§9.1), and dragging that along would walk it off the map.
+	if was, ok := m.heldRect(); ok && was.Contains(m.ws.Viewport.Cursor) {
+		m.ws.Viewport.Cursor = state.Cell{
+			Col: m.ws.Viewport.Cursor.Col + d.Col,
+			Row: m.ws.Viewport.Cursor.Row + d.Row,
+		}
+	}
+	m.ws.Nodes, m.ws.Groups = nodes, m.withRect(m.holding, rect)
+	return m.follow().save()
+}
+
+// resizeGroup moves the held group's far edge. Shrinking past a node drops it
+// from the group, which is the whole of what membership is — so the snapshot is
+// taken again here, or the next move would carry a node the rectangle no longer
+// holds.
+func (m Model) resizeGroup(d state.Cell) Model {
+	nodes, rect, ok := m.ws.ResizeGroup(m.holding, d)
+	if !ok {
+		// Growing is refused only by another group, and shrinking only by the
+		// last cell — which is an edge the rectangle has run out of, not
+		// something to explain.
+		if d.Col > 0 || d.Row > 0 {
+			m.status = "Another group is in the way."
+		}
+		return m
+	}
+	m.ws.Nodes, m.ws.Groups = nodes, m.withRect(m.holding, rect)
+	m.held = m.ws.Members(rect)
+	return m.save()
+}
+
+// deleteGroup removes the rectangle and nothing else. A group is a way of
+// saying these belong together; unsaying it is not a reason for anything on the
+// map to stop existing.
+func (m Model) deleteGroup() Model {
+	groups := make([]state.Group, 0, len(m.ws.Groups))
+	for _, g := range m.ws.Groups {
+		if g.ID != m.holding {
+			groups = append(groups, g)
+		}
+	}
+	m.ws.Groups = groups
+	return m.release().save()
+}
+
+// withRect is the groups with one of them redrawn, in a fresh slice: a Model is
+// copied by value all over Bubble Tea, and editing in place would move the
+// rectangle on every older copy too.
+func (m Model) withRect(id string, rect state.Rect) []state.Group {
+	groups := append([]state.Group(nil), m.ws.Groups...)
+	for i := range groups {
+		if groups[i].ID == id {
+			groups[i].Rect = rect
+		}
+	}
+	return groups
+}
+
+// heldTitle is what the status bar calls the group in hand.
+func (m Model) heldTitle() string {
+	g, _ := m.heldGroup()
+	return g.Title
+}
+
+// heldRect is where the group in hand is drawn, before this keystroke moves it.
+func (m Model) heldRect() (state.Rect, bool) {
+	g, ok := m.heldGroup()
+	return g.Rect, ok
+}
+
+func (m Model) heldGroup() (state.Group, bool) {
+	for _, g := range m.ws.Groups {
+		if g.ID == m.holding {
+			return g, true
+		}
+	}
+	return state.Group{}, false
 }

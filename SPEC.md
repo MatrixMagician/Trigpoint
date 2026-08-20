@@ -242,6 +242,7 @@ Modal, vim-flavoured. No leader key for core motions; count prefixes supported (
 | `x` | Kill node (confirm; `x` on dead node = remove card) |
 | `g` | Group: create from selection (**gathers** members together first) / add to group under cursor (grows the rect if no cell is free) |
 | `v` | Visual select (multi-node: move, group, tag, kill in bulk) |
+| `V` | Hold the group under the cursor: `H J K L` move it rigidly, `h j k l` resize it, `x` deletes it (nodes survive), `Esc` lets go |
 | `Space` | Peek: full-screen scrollable snapshot (`capture-pane -S -2000`) without attaching |
 | `/` | Filter · `Ctrl-K` or `:` palette |
 | `Tab` / `S-Tab` | Next / previous workspace · `w` workspace picker |
@@ -378,9 +379,9 @@ attach handoff wraps the ssh command. ControlMaster strongly recommended and che
    2–4 live tiles. Decide only after v1 usage data.
 5. **Note nodes without tmux.** Slight model asymmetry (nodes that never have sessions).
    Accepted; keep the session layer nil-tolerant from M1 so notes don't special-case late.
-6. **No binding for moving a group.** Rigid group movement (§6) needs a way to select and
-   move a *group*; `H J K L` currently moves the selected node. Resolve in M3 when groups
-   land — likely a group-select mode reached from `g` or `v`.
+6. ~~**No binding for moving a group.**~~ Resolved in M3: `V` holds the group under the
+   cursor, and while one is held `H J K L` move it rigidly and `h j k l` resize it. See
+   docs/adr/0013-a-group-is-held-with-V.md.
 7. **Naming.** "Trigpoint" survived an initial web/GitHub clash check (Aug 2026); before M5,
    re-verify against Homebrew formulae, apt/Fedora package names, and pkg.go.dev, and check
    `trig` specifically as a binary name (Kiln → Fettle precedent).

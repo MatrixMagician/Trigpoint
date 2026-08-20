@@ -48,6 +48,11 @@ var commands = []command{
 	{label: "Cycle card size", hint: "s size", keys: []string{"s"}},
 	{label: "Visual select", keys: []string{"v"}},
 	{label: "Group the selection", keys: []string{"g"}},
+	// The keys a held group answers are not in the table, because the table is
+	// replayed from the map: "V x" chosen with the cursor in no group would be
+	// V doing nothing and x opening the kill prompt on a node. They are on the
+	// status bar instead, for as long as a group is held (heldHints).
+	{label: "Hold the group under the cursor (HJKL move · hjkl resize · x delete)", keys: []string{"V"}},
 	{label: "Next workspace", hint: "⇥ workspace", keys: []string{"tab"}},
 	{label: "Choose colour", keys: []string{"C"}},
 	{label: "Previous workspace", keys: []string{"shift+tab"}},

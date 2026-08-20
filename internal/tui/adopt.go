@@ -84,11 +84,13 @@ func (m Model) adoptable() tea.Cmd {
 
 // openAdoption puts the picker up, or says why there is nothing to put up.
 func (m Model) openAdoption(msg adoptableMsg) Model {
-	if m.mode != modeNormal {
+	if m.mode != modeNormal || m.holding != "" {
 		// The question was a subprocess, and the user has moved on: a title half
-		// typed, a kill waiting on y. Taking the keyboard now would turn the
-		// next Enter into an adoption of a session nobody is looking at, so the
-		// answer is dropped — A is one keystroke away whenever it is wanted.
+		// typed, a kill waiting on y, a group picked up. Taking the keyboard now
+		// would turn the next Enter into an adoption of a session nobody is
+		// looking at, so the answer is dropped — A is one keystroke away
+		// whenever it is wanted. A held group is not a mode but it is a gesture
+		// in progress, which is the whole of what this guard is about.
 		return m
 	}
 	switch {
