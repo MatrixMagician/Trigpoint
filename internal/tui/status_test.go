@@ -25,7 +25,10 @@ func statusModel(t *testing.T, cfg config.Config) (Model, string) {
 	ws := state.Workspace{Name: "main", Nodes: []state.Node{
 		{ID: "kt7m", Kind: state.KindAgent, Title: "claude", Cmd: "claude"},
 	}}
-	m := New(cfg, ws, dir, &fakeSessions{})
+	m, err := New(cfg, ws, dir, &fakeSessions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	return sized.(Model), status.DirBeside(dir)
 }
@@ -249,7 +252,10 @@ func TestUJumpsToNeedsYouBeforeUnread(t *testing.T) {
 		{ID: "bbbb", Kind: state.KindShell, Title: "noisy", Pos: state.Cell{Col: 1}},
 		{ID: "cccc", Kind: state.KindAgent, Title: "claude", Pos: state.Cell{Col: 2}},
 	}}
-	m := New(config.Default(), ws, dir, &fakeSessions{})
+	m, err := New(config.Default(), ws, dir, &fakeSessions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
 	m = sized.(Model)
 	m.unread = map[string]bool{"bbbb": true, "cccc": true}

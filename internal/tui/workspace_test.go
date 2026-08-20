@@ -24,7 +24,10 @@ func newWorkspaceModel(t *testing.T, ws state.Workspace, others ...state.Workspa
 		}
 	}
 	sessions := &fakeSessions{}
-	m := New(config.Default(), ws, dir, sessions)
+	m, err := New(config.Default(), ws, dir, sessions)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	return sized.(Model), sessions, dir
 }

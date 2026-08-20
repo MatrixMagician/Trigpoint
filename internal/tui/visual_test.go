@@ -24,7 +24,10 @@ func visualMap(t *testing.T) (Model, *fakeSessions) {
 		{ID: "ccc", Kind: state.KindShell, Title: "db", Pos: state.Cell{Col: 2}},
 	}}
 	sessions := &fakeSessions{}
-	m := New(config.Default(), ws, t.TempDir(), sessions)
+	m, err := New(config.Default(), ws, t.TempDir(), sessions)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	return sized.(Model), sessions
 }
@@ -379,7 +382,10 @@ func TestBulkKillTakesNotesAndSessionsTogether(t *testing.T) {
 		{ID: "bbb", Kind: state.KindNote, Title: "scratch", Pos: state.Cell{Col: 1}},
 	}}
 	sessions := &fakeSessions{}
-	base := New(config.Default(), ws, t.TempDir(), sessions)
+	base, err := New(config.Default(), ws, t.TempDir(), sessions)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := base.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m := pressKeys(t, sized.(Model), "v", "l", "x")
 

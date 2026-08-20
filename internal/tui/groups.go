@@ -241,7 +241,16 @@ func place(grid [][]string, x, y int, text string, style lipgloss.Style) {
 // It is not a mode in the sense the prompts are, but it is the one state in
 // which a key means something other than what it means on the map, and the
 // status bar says so for as long as the group is held.
-const heldHints = "HJKL move · hjkl resize · x delete · esc done"
+var heldKeys = contextKeys{
+	title: "Group held",
+	when:  "while V has a group in hand",
+	keys: []keyHint{
+		{"HJKL", "move", "Move the group rigidly, carrying its nodes and shoving what is in its path"},
+		{"hjkl", "resize", "Move the group's far edge, growing or shrinking the rectangle"},
+		{"x", "delete", "Delete the group; the nodes inside it stay where they are"},
+		{"esc", "done", "Let go of the group (V does too)"},
+	},
+}
 
 // groupResizes are the far edge's own motions: l and j reach a column or a row
 // further out, h and k pull it back in. The rect's Min never moves, so a resize

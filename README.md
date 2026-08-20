@@ -156,7 +156,12 @@ What is bound today:
 | `/` | Filter the map — narrows as you type, `Enter` keeps it, `Esc` clears it |
 | `u` | Jump to the next node needing attention — every agent reporting NEEDS YOU first, then every unread card, in map order. Press it again for the one after |
 | `Ctrl-K` / `:` | Palette — every command, every node on every map, every workspace, every session to adopt |
+| `?` | Help overlay — every action and the key it is bound to right now, `j`/`k` and `Space`/`b` scroll, `Esc` returns |
 | `q` / `Ctrl-C` | Quit — sessions keep running |
+
+Every one of them is remappable, and `?` is generated from the keymap you are actually
+running, so a rebound key shows up there with no other change. See
+[Remapping](#remapping).
 
 `Enter` hands the entire terminal to that node's tmux session, so TUI apps, 256-colour
 output, resize, and copy-mode behave exactly as they do under a plain `tmux attach` —
@@ -501,6 +506,11 @@ cmd = "claude"
 
 [agents.codex]                # adding one is an edit here, never a code change
 cmd = "codex"
+
+[keymap]                      # every action in the table below, rebindable
+new_shell = "ctrl+n"
+centre = "z z"                # a sequence: two keys, in order
+kill = ""                     # unbound — still in the palette, on no key
 ```
 
 The `agents` tables are the presets, not additions to them: a file that names any replaces
@@ -510,6 +520,67 @@ rid of. A file with no `agents` table keeps both defaults.
 Every setting above is live; a node that has never been sized takes the `m` line count. A
 `status_stale_after_min` of `0` turns the stale mark off rather than staling everything at
 once.
+
+### Remapping
+
+`[keymap]` binds actions to keys, one line per action. A binding is written as alternatives
+separated by commas, each alternative a sequence of key names separated by spaces:
+
+```toml
+[keymap]
+cursor_left = "h, left"       # two ways to press it
+centre = "z z"                # one way, two keys in order
+palette = "ctrl+k, :"
+peek = "space"                # the one key written by name rather than typed
+kill = ""                     # unbound: reachable from the palette and nowhere else
+```
+
+Key names are Bubble Tea's: single characters as themselves (`n`, `N`, `/`, `?`), and
+`enter`, `esc`, `tab`, `shift+tab`, `space`, `up`, `down`, `left`, `right`, `home`, `end`,
+`pgup`, `pgdown`, and `ctrl+<key>` for the rest.
+
+The whole keymap is checked when Trigpoint starts, and by `trig doctor`. An action name that
+does not exist, one key bound to two actions, or a binding that is the start of another —
+`z` bound to anything makes `z z` unreachable — is reported by name before the map opens,
+rather than discovered later by a key that does nothing.
+
+`1`–`9` are count prefixes rather than keys — `3l` is three presses of `l` on every map — so
+binding an action to one is refused. `0` is a key whenever no count is being typed, which is
+how the origin has always been pressed.
+
+| Action | Default | What it does |
+| --- | --- | --- |
+| `attach` | `enter` | Attach to node / edit note |
+| `peek` | `space` | Peek at a node's output |
+| `new_shell` | `n` | New shell node |
+| `new_note` | `N` | New note |
+| `new_agent` | `a` | New agent node |
+| `adopt` | `A` | Adopt a session |
+| `attention` | `u` | Jump to the next node needing attention |
+| `kill` | `x` | Kill node |
+| `quit` | `q` | Quit Trigpoint |
+| `rename` | `r` | Rename node |
+| `colour_cycle` | `c` | Cycle colour |
+| `colour_pick` | `C` | Choose colour |
+| `tags` | `t` | Edit tags |
+| `size` | `s` | Cycle card size |
+| `select` | `v` | Visual select |
+| `group` | `g` | Group the selection |
+| `hold` | `V` | Hold the group under the cursor |
+| `workspace_next` | `tab` | Next workspace |
+| `workspace_prev` | `shift+tab` | Previous workspace |
+| `workspace_picker` | `w` | Workspace picker |
+| `filter` | `/` | Filter the map |
+| `palette` | `ctrl+k, :` | Open the palette |
+| `help` | `?` | Help overlay |
+| `clear` | `esc` | Clear the selection, then the filter |
+| `cursor_left` `cursor_down` `cursor_up` `cursor_right` | `h, left` `j, down` `k, up` `l, right` | Move the cursor |
+| `node_left` `node_down` `node_up` `node_right` | `H` `J` `K` `L` | Move the selection |
+| `origin` | `0` | Jump to the origin |
+| `centre` | `z z` | Centre on the cursor |
+
+The keys inside a context — the ones a held group, a peek, the filter prompt, and the palette
+answer to — are fixed. `?` lists them too, so nothing is only findable by pressing it.
 
 ## Files
 

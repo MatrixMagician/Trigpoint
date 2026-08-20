@@ -20,7 +20,10 @@ func mapWithOneNode(t *testing.T, cfg config.Config) (Model, *fakeSessions) {
 	ws := state.Workspace{Name: "main", Nodes: []state.Node{
 		{ID: "k4f2", Kind: state.KindShell, Title: "api"},
 	}}
-	m := New(cfg, ws, t.TempDir(), sessions)
+	m, err := New(cfg, ws, t.TempDir(), sessions)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	return sized.(Model), sessions
 }

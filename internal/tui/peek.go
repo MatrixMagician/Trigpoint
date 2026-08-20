@@ -87,6 +87,18 @@ func (m Model) openPeek(id string, lines []string) Model {
 	return m.clampPeek()
 }
 
+// peekKeys are the keys a peek answers to, for the status bar and the overlay.
+var peekKeys = contextKeys{
+	title: "Peek",
+	when:  "while a node's output is on screen",
+	keys: []keyHint{
+		{"j/k", "scroll", "Scroll a line at a time (the arrows do too)"},
+		{"␣/b", "page", "Scroll a page at a time (pgdn/pgup, ctrl+f/ctrl+b, ctrl+d/ctrl+u do too)"},
+		{"g/G", "ends", "Jump to the start or the end of the snapshot (home/end do too)"},
+		{"esc", "map", "Close the peek and go back to the map"},
+	},
+}
+
 // updatePeek is every key a peek reads. Esc closes it and the rest scroll;
 // there is deliberately no key here that acts on the map or on the node, so a
 // keystroke landing during a peek can do neither.

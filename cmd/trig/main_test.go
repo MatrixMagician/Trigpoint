@@ -32,10 +32,63 @@ func TestDoctorPassesOnThisMachine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("trig doctor failed on a machine with tmux installed: %v\n%s", err, out)
 	}
-	for _, want := range []string{"tmux", "control mode", "config", "state directory"} {
+	for _, want := range []string{"tmux", "control mode", "config", "state directory", "keymap"} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("doctor output does not mention %q:\n%s", want, out)
 		}
+	}
+}
+
+// TestDoctorRefusesAKeymapThatCannotWork: a keymap that does not resolve stops
+// the map opening, so doctor is where the reason lives rather than being found
+// by a key that quietly does nothing (§10).
+func TestDoctorRefusesAKeymapThatCannotWork(t *testing.T) {
+	cfgDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cfgDir, "trig"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := "[keymap]\nnew_note = \"n\"\n"
+	if err := os.WriteFile(filepath.Join(cfgDir, "trig", "config.toml"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(build(t), "doctor")
+	cmd.Env = append(os.Environ(), "XDG_STATE_HOME="+t.TempDir(), "XDG_CONFIG_HOME="+cfgDir)
+	out, err := cmd.CombinedOutput()
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("doctor should exit non-zero on a keymap that binds one key twice, got %v\n%s", err, out)
+	}
+	for _, want := range []string{"keymap", "new_shell", "new_note"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("the failure should name %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestTheMapRefusesToOpenOnABrokenKeymap is the same gate at startup, which is
+// where a user meets it: the terminal is never taken.
+func TestTheMapRefusesToOpenOnABrokenKeymap(t *testing.T) {
+	cfgDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cfgDir, "trig"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := "[keymap]\ncursor_lft = \"h\"\n"
+	if err := os.WriteFile(filepath.Join(cfgDir, "trig", "config.toml"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(build(t))
+	cmd.Env = append(os.Environ(), "XDG_STATE_HOME="+t.TempDir(), "XDG_CONFIG_HOME="+cfgDir)
+	out, err := cmd.CombinedOutput()
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("the map should not open on an unknown action, got %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "cursor_lft") || !strings.Contains(string(out), "cursor_left") {
+		t.Errorf("the failure should name the typo and the action meant:\n%s", out)
 	}
 }
 

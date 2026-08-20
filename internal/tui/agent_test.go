@@ -39,7 +39,10 @@ func TestAPresetIsWhateverConfigSays(t *testing.T) {
 	// picker is built from the map config hands over and from nothing else.
 	cfg := config.Default()
 	cfg.Agents = map[string]config.Agent{"aider": {Cmd: "aider --model sonnet"}}
-	m := New(cfg, state.Workspace{Name: "main"}, t.TempDir(), &fakeSessions{})
+	m, err := New(cfg, state.Workspace{Name: "main"}, t.TempDir(), &fakeSessions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 
 	next, _ := typeKeys(t, sized.(Model), "a")
@@ -171,7 +174,10 @@ func TestEscBacksOutOfTheAgentPicker(t *testing.T) {
 func TestAPresetWithNoCommandIsRefused(t *testing.T) {
 	cfg := config.Default()
 	cfg.Agents = map[string]config.Agent{"typo": {}}
-	m := New(cfg, state.Workspace{Name: "main"}, t.TempDir(), &fakeSessions{})
+	m, err := New(cfg, state.Workspace{Name: "main"}, t.TempDir(), &fakeSessions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 
 	next, _ := typeKeys(t, sized.(Model), "a")

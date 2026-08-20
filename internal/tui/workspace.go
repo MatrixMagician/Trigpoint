@@ -64,11 +64,23 @@ func (m Model) cycleWorkspace(step int) (tea.Model, tea.Cmd) {
 	if len(names) < 2 {
 		// Silence here would read as a broken key rather than as a map with
 		// nowhere to switch to.
-		m.status = "Only one workspace. Press w then n to make another."
+		// Named from the live keymap, like every other hint that says which key
+		// to press: the picker is remappable and this sentence is not allowed
+		// to outlive its default.
+		m.status = "Only one workspace. " + m.pickerHint()
 		return m, nil
 	}
 	at := slices.Index(names, m.ws.Name)
 	return m.switchTo(names[((at+step)%len(names)+len(names))%len(names)])
+}
+
+// pickerHint says how to reach the workspace picker, which is where a second
+// workspace is made.
+func (m Model) pickerHint() string {
+	if keys := m.keys.hintKeys("workspace_picker"); keys != "" {
+		return "Press " + keys + " then n to make another."
+	}
+	return "The palette makes another."
 }
 
 // switchTo leaves one map for another. The one being left is written first: its

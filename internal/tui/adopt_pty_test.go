@@ -35,7 +35,7 @@ func TestAdoptingARealSessionOnARealTerminal(t *testing.T) {
 
 	term := openTerminal(t)
 	stateDir := t.TempDir()
-	prog := tea.NewProgram(New(config.Default(), state.Workspace{Name: "main", Dir: t.TempDir()}, stateDir, cli),
+	prog := tea.NewProgram(mustNew(t, config.Default(), state.Workspace{Name: "main", Dir: t.TempDir()}, stateDir, cli),
 		tea.WithAltScreen(), tea.WithInput(term.pts), tea.WithOutput(term.pts))
 	done := make(chan error, 1)
 	go func() { _, err := prog.Run(); done <- err }()

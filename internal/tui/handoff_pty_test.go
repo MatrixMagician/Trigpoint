@@ -43,7 +43,7 @@ func TestHandoffRoundTripOnARealTerminal(t *testing.T) {
 
 	ws := state.Workspace{Name: "main", Dir: t.TempDir()}
 	stateDir := t.TempDir()
-	prog := tea.NewProgram(New(config.Default(), ws, stateDir, cli),
+	prog := tea.NewProgram(mustNew(t, config.Default(), ws, stateDir, cli),
 		tea.WithAltScreen(), tea.WithInput(term.pts), tea.WithOutput(term.pts))
 	done := make(chan error, 1)
 	go func() { _, err := prog.Run(); done <- err }()

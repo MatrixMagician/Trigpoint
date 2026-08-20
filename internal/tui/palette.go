@@ -5,10 +5,11 @@ package tui
 // map, every workspace, and every session there is to adopt.
 //
 // It is the discoverability backstop, and bindings are the fast path. So a
-// command entry does not reimplement its action: it replays its own binding
-// through the map's key handling, which is what keeps the two from ever
-// disagreeing about what a key does. The same table names the keys the status
-// bar offers, so there is one list of what the map can do and not three.
+// command entry does not reimplement its action: it and the key that runs it
+// are the same function value, taken from the command table in keymap.go — the
+// same table the keyboard, the status bar's hints, and the help overlay are
+// read from. An action nothing is bound to is offered here and nowhere else,
+// which is what makes an empty binding a thing a user can write.
 
 import (
 	"fmt"
@@ -21,107 +22,16 @@ import (
 	"github.com/MatrixMagician/Trigpoint/internal/state"
 )
 
-// command is one thing the map does, under the key that does it.
-type command struct {
-	label string   // what the palette calls it
-	hint  string   // what the status bar calls it, empty for one it does not offer
-	keys  []string // the binding, replayed through the map's own key handling
-}
-
-// commands is the keymap (§7.3). The order is the order the status bar gives
-// its hints up in — a terminal too narrow for all of them loses them from the
-// end — and the order an unfiltered palette opens in, so the keys worth knowing
-// come first and the motions, which nobody needs a list to find, come last.
-//
-// There is deliberately no entry for the palette itself: it is already open.
-var commands = []command{
-	{label: "Attach to node / edit note", hint: "⏎ attach", keys: []string{"enter"}},
-	{label: "Peek at a node's output", hint: "␣ peek", keys: []string{" "}},
-	{label: "New shell node", hint: "n new", keys: []string{"n"}},
-	{label: "New note", hint: "N note", keys: []string{"N"}},
-	// No status-bar hint: the bar drops its hints from the end, and at eighty
-	// columns one more would cost "q quit" — which is the one hint a first run
-	// most needs.
-	{label: "New agent node (picker: the configured presets, or a command of your own)", keys: []string{"a"}},
-	{label: "Adopt a session", hint: "A adopt", keys: []string{"A"}},
-	// No status-bar hint, for the same reason the agent picker has none: the
-	// bar drops hints from the end, and this one would cost "q quit".
-	{label: "Jump to the next node needing attention (needs-you, then unread)", keys: []string{"u"}},
-	{label: "Kill node", hint: "x kill", keys: []string{"x"}},
-	{label: "Quit Trigpoint", hint: "q quit", keys: []string{"q"}},
-	{label: "Rename node", hint: "r name", keys: []string{"r"}},
-	{label: "Cycle colour", hint: "c colour", keys: []string{"c"}},
-	{label: "Edit tags", hint: "t tags", keys: []string{"t"}},
-	{label: "Cycle card size", hint: "s size", keys: []string{"s"}},
-	{label: "Visual select", keys: []string{"v"}},
-	{label: "Group the selection", keys: []string{"g"}},
-	// The keys a held group answers are not in the table, because the table is
-	// replayed from the map: "V x" chosen with the cursor in no group would be
-	// V doing nothing and x opening the kill prompt on a node. They are on the
-	// status bar instead, for as long as a group is held (heldHints).
-	{label: "Hold the group under the cursor (HJKL move · hjkl resize · x delete)", keys: []string{"V"}},
-	{label: "Next workspace", hint: "⇥ workspace", keys: []string{"tab"}},
-	{label: "Choose colour", keys: []string{"C"}},
-	{label: "Previous workspace", keys: []string{"shift+tab"}},
-	{label: "Workspace picker", keys: []string{"w"}},
-	{label: "Filter the map", keys: []string{"/"}},
-	{label: "Clear the filter", keys: []string{"esc"}},
-	{label: "Move cursor left", keys: []string{"h"}},
-	{label: "Move cursor down", keys: []string{"j"}},
-	{label: "Move cursor up", keys: []string{"k"}},
-	{label: "Move cursor right", keys: []string{"l"}},
-	{label: "Move node left", keys: []string{"H"}},
-	{label: "Move node down", keys: []string{"J"}},
-	{label: "Move node up", keys: []string{"K"}},
-	{label: "Move node right", keys: []string{"L"}},
-	{label: "Jump to the origin", keys: []string{"0"}},
-	{label: "Centre on the cursor", keys: []string{"z", "z"}},
-}
-
-// press replays a command's binding, so that choosing it from the palette and
-// pressing the key are the same code path and cannot drift apart. A binding of
-// more than one key — zz — is replayed in order, because that is what pressing
-// it is.
-func (c command) press(m Model) (tea.Model, tea.Cmd) {
-	var next tea.Model = m
-	var cmds []tea.Cmd
-	for _, key := range c.keys {
-		after, cmd := next.Update(keyMsg(key))
-		next, cmds = after, append(cmds, cmd)
-	}
-	return next, tea.Batch(cmds...)
-}
-
-// keyTypes are the bindings Bubble Tea delivers as something other than the
-// runes they are written as here.
-var keyTypes = map[string]tea.KeyType{
-	"enter":     tea.KeyEnter,
-	"esc":       tea.KeyEsc,
-	"tab":       tea.KeyTab,
-	"shift+tab": tea.KeyShiftTab,
-	" ":         tea.KeySpace,
-}
-
-// keyMsg is a binding as the keyboard would have delivered it.
-func keyMsg(key string) tea.KeyMsg {
-	if t, ok := keyTypes[key]; ok {
-		return tea.KeyMsg{Type: t}
-	}
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
-}
-
-// keyLabel is a binding as the palette shows it. The space bar is drawn rather
-// than spelled, because a binding of one space is a column of nothing at all —
-// and flatten, which every line of the palette goes through, would drop it.
-func keyLabel(keys []string) string {
-	shown := make([]string, 0, len(keys))
-	for _, k := range keys {
-		if k == " " {
-			k = "␣"
-		}
-		shown = append(shown, k)
-	}
-	return strings.Join(shown, "")
+// paletteKeys is what the palette itself answers to, for the help overlay: the
+// query is typed into the status bar and everything else is these.
+var paletteKeys = contextKeys{
+	title: "Palette",
+	when:  "while the palette is open",
+	keys: []keyHint{
+		{"↑↓", "choose", "Move through the matches (ctrl+p and ctrl+n do the same)"},
+		{"⏎", "run", "Run the chosen entry: go to a node, or do what the map would"},
+		{"esc", "cancel", "Close the palette, having done nothing"},
+	},
 }
 
 // entry is one line of the palette: what it is called, what it is, and what
@@ -159,8 +69,12 @@ func (m Model) askAdoptable() tea.Cmd {
 	}
 }
 
+// closePalette puts the map back, and the count with it. A count is typed at
+// the map and the palette is a screen away from it: an entry run from here does
+// what it says once, not three times because a 3 was in hand when it opened.
 func (m Model) closePalette() Model {
 	m.mode, m.input, m.choice, m.palette = modeNormal, "", 0, nil
+	m.repeat, m.count = 1, ""
 	return m
 }
 
@@ -219,7 +133,10 @@ func (m Model) paletteEntries() []entry {
 		}
 	}
 	for _, c := range commands {
-		entries = append(entries, entry{label: c.label, detail: keyLabel(c.keys), run: c.press})
+		if c.hidden {
+			continue
+		}
+		entries = append(entries, entry{label: c.label, detail: m.keys.label(c.name), run: c.run})
 	}
 	for _, name := range names {
 		if name == m.ws.Name {
@@ -417,5 +334,5 @@ func (m Model) paletteBar() string {
 	if len(matches) > 0 {
 		where = fmt.Sprintf("%d of %d", clamp(m.choice, 0, len(matches)-1)+1, len(matches))
 	}
-	return fmt.Sprintf("› %s▏ · %s · ↑↓ choose · ⏎ run · esc cancel", flatten(m.input), where)
+	return fmt.Sprintf("› %s▏ · %s · %s", flatten(m.input), where, paletteKeys.hints())
 }

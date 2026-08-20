@@ -24,7 +24,10 @@ func TestNAndXAgainstRealTmux(t *testing.T) {
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", cli.Socket, "kill-server").Run() })
 
 	workDir := t.TempDir()
-	m := New(config.Default(), state.Workspace{Name: "main", Dir: workDir}, t.TempDir(), cli)
+	m, err := New(config.Default(), state.Workspace{Name: "main", Dir: workDir}, t.TempDir(), cli)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = sized.(Model)
 
@@ -89,7 +92,10 @@ func TestEnterOnASessionThatDiedOffersRespawnRatherThanHanging(t *testing.T) {
 		t.Fatalf("Kill: %v", err)
 	}
 
-	m := New(config.Default(), ws, t.TempDir(), cli)
+	m, err := New(config.Default(), ws, t.TempDir(), cli)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	next, cmd := press(t, sized.(Model), tea.KeyEnter)
 	if cmd != nil {
@@ -128,7 +134,10 @@ func TestAPreviewOfARealSessionReachesTheCard(t *testing.T) {
 		t.Fatalf("send-keys: %v", err)
 	}
 
-	m := New(config.Default(), ws, t.TempDir(), cli)
+	m, err := New(config.Default(), ws, t.TempDir(), cli)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = sized.(Model)
 
@@ -181,7 +190,10 @@ func TestReconciliationAgainstRealTmux(t *testing.T) {
 		{ID: "k4f2", Kind: state.KindShell, Title: "api"},
 		{ID: "nnn", Kind: state.KindNote, Title: "todo", Note: "buy milk"},
 	}}
-	m := New(config.Default(), ws, t.TempDir(), cli)
+	m, err := New(config.Default(), ws, t.TempDir(), cli)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = reconciled(t, sized.(Model))
 

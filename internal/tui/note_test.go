@@ -84,7 +84,7 @@ func TestACardWithNothingToShowKeepsItsTwoLines(t *testing.T) {
 	cfg := config.Default()
 	cfg.General.PreviewLines = config.PreviewLines{}
 	sessions := &fakeSessions{}
-	m := New(cfg, state.Workspace{Name: "main", Nodes: []state.Node{
+	m := mustNew(t, cfg, state.Workspace{Name: "main", Nodes: []state.Node{
 		{ID: "k4f2", Kind: state.KindShell, Title: "api"},
 	}}, t.TempDir(), sessions)
 	if got := m.cardRows(); got != cardRowsNoBody {

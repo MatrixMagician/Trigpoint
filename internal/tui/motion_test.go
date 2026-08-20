@@ -26,7 +26,10 @@ func mapWith(t *testing.T, cells ...state.Cell) Model {
 	if len(cells) > 0 {
 		ws.Viewport.Cursor = cells[0]
 	}
-	m := New(config.Default(), ws, t.TempDir(), &fakeSessions{})
+	m, err := New(config.Default(), ws, t.TempDir(), &fakeSessions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	return sized.(Model)
 }
@@ -233,7 +236,10 @@ func TestMovementPersists(t *testing.T) {
 		{ID: "b", Kind: state.KindShell, Pos: state.Cell{Col: 40, Row: 40}},
 	}}
 	dir := t.TempDir()
-	m := New(config.Default(), ws, dir, &fakeSessions{})
+	m, err := New(config.Default(), ws, dir, &fakeSessions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = pressKeys(t, sized.(Model), "l", "L")
 
@@ -260,7 +266,10 @@ func TestAnUnrelatedKeyForgetsTheCount(t *testing.T) {
 func TestAMotionThatGoesNowhereWritesNothing(t *testing.T) {
 	dir := t.TempDir()
 	ws := state.Workspace{Name: "main", Nodes: []state.Node{{ID: "a", Kind: state.KindShell}}}
-	m := New(config.Default(), ws, dir, &fakeSessions{})
+	m, err := New(config.Default(), ws, dir, &fakeSessions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 
 	pressKeys(t, sized.(Model), "h", "k")
