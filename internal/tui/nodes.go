@@ -85,7 +85,7 @@ func (m Model) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEnter:
 		return m.createNode()
 	case tea.KeyEsc:
-		m.mode, m.input = modeNormal, ""
+		m.mode, m.input, m.creatingCmd = modeNormal, "", ""
 	case tea.KeyBackspace:
 		if r := []rune(m.input); len(r) > 0 {
 			m.input = string(r[:len(r)-1])
@@ -114,10 +114,11 @@ func (m Model) createNode() (tea.Model, tea.Cmd) {
 		ID:        id,
 		Kind:      m.creating,
 		Title:     title,
+		Cmd:       m.creatingCmd,
 		Pos:       draft.NearestFreeCell(m.ws.Viewport.Cursor),
 		CreatedAt: time.Now(),
 	}
-	m.mode, m.input, m.status = modeNormal, "", ""
+	m.mode, m.input, m.status, m.creatingCmd = modeNormal, "", "", ""
 
 	if !node.HasSession() {
 		// With no session to confirm there is nothing to hold the node in
@@ -128,7 +129,7 @@ func (m Model) createNode() (tea.Model, tea.Cmd) {
 
 	sessions, workspace, dir := m.sessions, m.ws.Name, m.dirOf(node)
 	return m, func() tea.Msg {
-		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, node.Cmd, provenance(workspace, node))
+		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, startCmd(node), provenance(workspace, node))
 		return nodeCreatedMsg{node: node, err: err}
 	}
 }

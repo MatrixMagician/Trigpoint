@@ -88,6 +88,12 @@ func Path() (string, error) {
 // leave the user with settings they cannot see.
 func Load(path string) (Config, error) {
 	cfg := Default()
+	// Emptied first, so that an agents table in the file is the list of presets
+	// rather than an addition to a built-in one: a decode merges into a map it
+	// finds, and a preset that ships by default could then never be removed —
+	// choosing one for an agent that is not installed makes a node whose
+	// session runs "command not found".
+	cfg.Agents = nil
 	md, err := toml.DecodeFile(path, &cfg)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -105,6 +111,9 @@ func Load(path string) (Config, error) {
 		}
 		return Config{}, fmt.Errorf("reading config %s: unknown %s: %s",
 			path, plural(len(keys), "key"), strings.Join(keys, ", "))
+	}
+	if cfg.Agents == nil {
+		cfg.Agents = Default().Agents
 	}
 	return cfg, nil
 }
