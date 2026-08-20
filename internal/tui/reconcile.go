@@ -11,6 +11,7 @@ package tui
 import (
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -29,7 +30,20 @@ type reconciledMsg struct {
 	// An answer that predates a correction is stale by definition, and applying
 	// it would take the map back to before something it has since been told.
 	at int
+	// seq is which pass this is. Passes are spawned freely — the slow tick,
+	// every change to the session list, opening a map — so two are often in
+	// flight at once, and they are applied in whatever order tmux answers.
+	// Numbering them is what tells an answer from an older one behind it.
+	seq uint64
 }
+
+// asked numbers the questions this process puts to tmux, so that the answers
+// can be ordered. It is process-wide rather than a field on the Model because a
+// Model is copied by value all over Bubble Tea: a counter incremented on the
+// copy that asks would be missing from the copy that applies, which is the same
+// hole again. Nothing reads the number but the map that sent it, against the
+// last one it applied, so a second map sharing the sequence costs only gaps.
+var asked atomic.Uint64
 
 // reconcile asks tmux what is running and works out what that means for this
 // map. It runs at startup, on every change to the session list, and on the slow
@@ -59,14 +73,14 @@ func (m Model) reconcile() tea.Cmd {
 		}
 	}
 
-	sessions, ws, at, stamp := m.sessions, m.ws, m.corrections, m.stamp()
+	sessions, ws, at, stamp, seq := m.sessions, m.ws, m.corrections, m.stamp(), asked.Add(1)
 	workspace := ws.Name
 	return func() tea.Msg {
 		names, err := sessions.List()
 		if err != nil {
 			// The map is left exactly as it was. A pass that could not ask must
 			// not condemn every node on the strength of not knowing.
-			return reconciledMsg{mapStamp: stamp, err: err, at: at}
+			return reconciledMsg{mapStamp: stamp, err: err, at: at, seq: seq}
 		}
 		// Liveness is the workspace's own rule, so that `trig ls` and the map
 		// call the same node dead (ADR 0017).
@@ -84,7 +98,7 @@ func (m Model) reconcile() tea.Cmd {
 				orphans = append(orphans, node)
 			}
 		}
-		return reconciledMsg{mapStamp: stamp, dead: dead, orphans: orphans, at: at}
+		return reconciledMsg{mapStamp: stamp, dead: dead, orphans: orphans, at: at, seq: seq}
 	}
 }
 
@@ -158,9 +172,15 @@ func (m Model) applyReconciled(msg reconciledMsg) (Model, tea.Cmd) {
 	// The orphans are still worth having — a session that was there when the
 	// pass ran is not un-found by anything the map has since learned — but a
 	// stale verdict on liveness would undo an attach that found a session gone,
-	// or a respawn that has just brought one back.
-	if msg.at == m.corrections {
-		m.dead = msg.dead
+	// or a respawn that has just brought one back, or a newer pass that has
+	// already seen further than this one. Both guards have to hold: they answer
+	// different questions, and an answer is only current if it is behind
+	// neither.
+	if msg.seq >= m.applied {
+		m.applied = msg.seq
+		if msg.at == m.corrections {
+			m.dead = msg.dead
+		}
 	}
 
 	var arrived []string

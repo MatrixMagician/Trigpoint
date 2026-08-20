@@ -500,3 +500,44 @@ func moveTo(t *testing.T, m Model, cell state.Cell) Model {
 	m.ws.Viewport.Cursor = cell
 	return m
 }
+
+func TestAnOlderPassDoesNotUndoANewerOnesVerdict(t *testing.T) {
+	m, sessions, _ := newNodeModel(t, state.Workspace{Name: "main", Dir: "/tmp/work", Nodes: []state.Node{
+		{ID: "aaa", Kind: state.KindShell, Title: "api", Pos: state.Cell{Col: 0, Row: 0}},
+		{ID: "bbb", Kind: state.KindShell, Title: "web", Pos: state.Cell{Col: 1, Row: 0}},
+	}})
+	both := []string{tmux.SessionName("main", "aaa"), tmux.SessionName("main", "bbb")}
+	sessions.live = both
+	// A session of ours with no node behind it, so the older pass carries an
+	// orphan as well as a verdict.
+	sessions.envs = map[string]map[string]string{
+		tmux.SessionName("main", "ccc"): {"TRIG_WORKSPACE": "main", "TRIG_NODE_ID": "ccc"},
+	}
+
+	// The slow tick sends one pass; the session dies; the Sessions event that
+	// follows sends another. Both are in flight at once.
+	older := m.reconcile()
+	newer := m.reconcile()
+
+	// The newer pass answers first, and finds the session gone.
+	sessions.live = []string{tmux.SessionName("main", "aaa")}
+	next, _ := m.Update(newer())
+	m = next.(Model)
+	if !m.dead["bbb"] {
+		t.Fatal("the newer pass should have found the session gone")
+	}
+
+	// The older one lands afterwards, still describing the world from before.
+	sessions.live = append(both, tmux.SessionName("main", "ccc"))
+	next, cmd := m.Update(older())
+	m = settle(t, next.(Model), cmd)
+
+	if !m.dead["bbb"] {
+		t.Error("an answer from before the session died must not bring the card back to life")
+	}
+	// The orphan is not a verdict: a session that was there when the pass ran
+	// is not un-found by anything that has happened since.
+	if _, known := m.node("ccc"); !known {
+		t.Error("a stale pass's orphan should still be reconstructed")
+	}
+}

@@ -40,6 +40,11 @@ type refreshTickMsg struct{}
 type capturedMsg struct {
 	mapStamp
 	previews map[string][]string
+	// seq is which batch this is, from the same sequence the reconciliation
+	// passes are numbered out of. An immediate refresh can overtake a debounced
+	// batch, and the older one landing last would put a card back to output it
+	// has already moved past.
+	seq uint64
 }
 
 // listen waits for the next event. A nil stream is a map that was never given
@@ -76,6 +81,18 @@ func (m Model) updatePreview(msg tea.Msg) (Model, tea.Cmd, bool) {
 			// something else here.
 			return m, nil, true
 		}
+		if msg.seq < m.captured {
+			// A batch a later one has already been seen past.
+			//
+			// ponytail: dropped whole, though a batch is only the cards that
+			// were dirty and on screen when it was asked for. One that also
+			// held a card the newer batch did not touch loses that card a
+			// snapshot, and `capture` has already cleared it from dirty, so it
+			// waits for the next tick — the same one-card-one-tick ceiling as
+			// before, moved. Number the snapshots per card if it ever shows.
+			return m, nil, true
+		}
+		m.captured = msg.seq
 		return m.withPreviews(msg.previews), nil, true
 
 	case refreshTickMsg:
@@ -177,7 +194,7 @@ func (m Model) capture() (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	sessions, stamp := m.sessions, m.stamp()
+	sessions, stamp, seq := m.sessions, m.stamp(), asked.Add(1)
 	// ponytail: one `tmux capture-pane` process per card. Measured at ~1.3 ms
 	// each, so a viewport of forty costs ~55 ms per tick, and the cost is the
 	// process rather than the lines it returns. If that ever shows, the forty
@@ -196,7 +213,7 @@ func (m Model) capture() (Model, tea.Cmd) {
 			}
 			previews[w.id] = previewBody(text, w.lines)
 		}
-		return capturedMsg{mapStamp: stamp, previews: previews}
+		return capturedMsg{mapStamp: stamp, previews: previews, seq: seq}
 	}
 }
 
@@ -214,12 +231,6 @@ func (m Model) refreshNow() (Model, tea.Cmd) {
 
 // withPreviews folds a batch of snapshots into the map, in a fresh map for the
 // same reason markDirty builds one.
-//
-// ponytail: batches are unnumbered, so two in flight at once land in whichever
-// order they finish and an older snapshot can win. It takes an immediate
-// refresh overtaking a debounced batch to happen at all, and costs one card one
-// tick. Number the batches and drop the stale one if a card is ever seen going
-// backwards.
 func (m Model) withPreviews(taken map[string][]string) Model {
 	previews := make(map[string][]string, len(m.previews)+len(taken))
 	for id, lines := range m.previews {

@@ -359,3 +359,31 @@ func TestKillingANodeForgetsItsPreview(t *testing.T) {
 		t.Errorf("a killed node's snapshot should go with it, got %q", m.previews["aaa"])
 	}
 }
+
+func TestAnOlderBatchOfSnapshotsDoesNotOvertakeANewerOne(t *testing.T) {
+	m, sessions := mapWithTwoShellNodes(t)
+	session := tmux.SessionName("main", "aaa")
+
+	// The debounced batch is asked for first, and takes its time.
+	m = update(t, m, activity("aaa"))
+	m, older := m.capture()
+	if older == nil {
+		t.Fatal("the debounce should have asked for a snapshot")
+	}
+
+	// An immediate refresh overtakes it and lands first.
+	sessions.output = map[string]string{session: "after\n"}
+	m, newer := m.refreshNow()
+	m = run(t, m, newer())
+	if got := strings.Join(m.previews["aaa"], "\n"); !strings.Contains(got, "after") {
+		t.Fatalf("the refresh should have shown the latest output, got %q", got)
+	}
+
+	// The debounced one finishes last, carrying the output from before.
+	sessions.output = map[string]string{session: "before\n"}
+	m = run(t, m, older())
+
+	if got := strings.Join(m.previews["aaa"], "\n"); strings.Contains(got, "before") {
+		t.Errorf("a card must not go back to an older snapshot, got %q", got)
+	}
+}
