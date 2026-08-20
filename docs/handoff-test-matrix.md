@@ -27,7 +27,7 @@ Build from a clean checkout and check the machine:
 
 ```sh
 go build -o trig ./cmd/trig
-./trig doctor          # four lines, all "ok", exit 0
+./trig doctor          # every line "ok", exit 0
 ```
 
 The runs below use your real config, state, and tmux server. To keep them out of the way:
@@ -49,9 +49,44 @@ be run while Trigpoint has the first one.
 
 ## The runs
 
-Four in total: Konsole and Ghostty, each of them twice — once started from a plain shell,
-and once with `trig` started from inside a `tmux` session (`tmux new -s outer`, then run
-`trig` in it). The nested runs are the ones most likely to find something.
+Two per terminal — once started from a plain shell, and once with `trig` started from
+inside a `tmux` session (`tmux new -s outer`, then run `trig` in it). The nested runs are
+the ones most likely to find something. Which terminals, and what has been run so far, is
+in **Results** below.
+
+### Running it by machine instead
+
+`scripts/handoff-harness.sh <terminal> <direct|nested>` drives steps 1–10 against a real
+emulator on a real Wayland session, so a re-run does not have to be typed out. It presses
+the keys with `ydotool`, checks from outside what only tmux can tell you — which clients
+are attached, whether the detach binding is there and session-scoped, whether the outer
+session survived — and screenshots the window at each step it cannot judge itself.
+
+```sh
+sudo ydotoold --socket-path=/tmp/.ydotool_socket --socket-own=$(id -u):$(id -g) &
+export YDOTOOL_SOCKET=/tmp/.ydotool_socket TRIG=$PWD/trig
+scripts/handoff-harness.sh kitty nested        # ~2 min; leave the machine alone while it runs
+```
+
+It needs `ydotool`, and `spectacle` (KDE) or `grim` (wlroots) for the screenshots.
+Everything it prints is a `PASS`/`FAIL` line, plus a report and screenshots under
+`/tmp/handoff-harness/<terminal>-<mode>/`. Three things to know before running it:
+
+- **It types into whatever window has focus.** Do not touch the machine while it runs.
+- **It kills the `trig_*` and `outer` sessions it creates**, and those live on your default
+  tmux socket alongside your real work. It cannot tell one from the other, so it refuses to
+  start at all if any are already there — quit them first, and nothing of yours is at risk.
+- **Step 5 resizes the window with KWin's tiling shortcuts** (Meta+Left, Meta+Down), which
+  is the only way any of these emulators can be resized from outside. On sway or river the
+  same keys move focus instead, so the harness checks that the resize actually reached the
+  session and stops the run if it did not, rather than typing the remaining steps into
+  somebody else's window. Making it work there means teaching it that compositor's own
+  resize binding.
+
+It does not replace looking. Colour, reflow, the alternate screen and the state of the
+scrollback are decided by reading the screenshots it leaves behind — steps 3, 4, 5 and the
+second half of 9 have no assertion attached to them, only a picture. Nor does it cover the
+step the matrix cannot script: a window resized by hand rather than by a tiling shortcut.
 
 ## Steps
 
@@ -215,6 +250,18 @@ handoff starts and taken back when it ends, so between attaches it does not exis
 explains why: a tmux key binding is server-global, and one that outlived the attach would
 take the key away from every other session on the server.
 
+**Nested: the tmux prefix reaches the outer session, not the node.** Both are tmux with
+the same prefix, so `Ctrl-b [` puts your *outer* client into copy-mode — its `[0/0]`
+indicator appears at the top right, above the node's own status line. Press the prefix
+twice to reach the inner one. This is nested tmux behaving normally and has nothing to do
+with the handoff.
+
+**kitty: `Application escape mode is not supported` on stderr at each attach and detach.**
+kitty says this when tmux asks for `DECSET 1004`-era application escape mode, and suggests
+its own extended keyboard protocol instead. It is a message from kitty about tmux, printed
+where you can see it because Trigpoint does not swallow the terminal's stderr. The detach
+key still arrives — the kitty runs below pass step 7 both ways.
+
 **Nested: two status bars during the attach.** The outer tmux's status line stays where it
 is and the node's appears above it. That is what nesting looks like.
 
@@ -311,6 +358,50 @@ On #27, or a new issue if it is a defect rather than a gap:
 
 Add a row per run. Steps 1–10 all passing is a pass; anything else names the step.
 
+### 2026-08-20 — Trigpoint `b4f96b4`, run by harness
+
+Fedora 44, kernel 7.1.8, Wayland under KDE Plasma 6.7.4, tmux 3.7b, Go 1.26.2. Default
+`detach_key` (`M-Escape`). Every run driven by `scripts/handoff-harness.sh`, steps 1–10,
+both directly and with `trig` started inside `tmux new -s outer`.
+
+| Terminal | Direct | Inside tmux | Notes |
+| --- | --- | --- | --- |
+| kitty 0.47.1 | pass | pass | `Application escape mode` warnings on stderr, see above |
+| alacritty 0.17.0 | pass | pass | steps 1–10 |
+| foot 1.27.0 | pass | pass | steps 1–10 |
+| Konsole 26.04.3 | pass | pass | re-run of the 2026-08-19 hand run, to calibrate the harness |
+| Ghostty 1.3.1 | pass | pass | as above |
+| wezterm | not run | not run | not packaged for Fedora 44; see **Not yet covered** |
+| Terminal.app | not run | not run | needs macOS; no Apple hardware, see **Not yet covered** |
+
+Nothing was raised against any step in any of the ten runs. What each one checked
+mechanically, rather than by eye:
+
+- **Step 2** — the node session gains a client that is not Trigpoint's control-mode one,
+  and `M-Escape` is bound in the root table as `detach-client -s =trig_main_…`, scoped to
+  that session (ADR 0002).
+- **Step 5** — the tmux client's own idea of its size changes with the window, so the
+  resize reached the session rather than stopping at the emulator.
+- **Step 6** — `#{pane_in_mode}` goes to 1 and back to 0, so the prefix still reaches tmux
+  through the handoff and copy-mode both enters and leaves.
+- **Step 7** — the node's real client goes away, the root binding goes with it, and on a
+  nested run the outer session is still attached afterwards. That last one is the ADR 0002
+  failure mode not happening.
+- **Step 8** — a second attach and detach, because twice through is worth more than once.
+- **Step 9** — `stty -a` before the run and after `q`: no `-icanon`, no `-echo`, and
+  identical either side once the window geometry step 5 deliberately changed is discounted.
+  This is the release-blocking one. On a nested run it is taken twice, and the second one is
+  the one that counts: tmux saves and restores the outer terminal's termios on its way out
+  whatever Trigpoint did, so the pty carrying the evidence is the outer tmux pane the
+  handoff ran in, measured from inside it.
+- **Step 10** — the node's session is still listed after Trigpoint exits.
+
+Judged from the screenshots rather than asserted: the map and its cards drawing without
+mojibake (steps 1, 8), vim taking and giving back the screen (3), 256-colour orange and
+bold-underlined red rendering as colour (4), the session reflowing legibly with no stale
+stripe (5), the map coming back redrawn at the new size (7), and — after `q` — the
+alternate screen handed back with the pre-`trig` scrollback still on it (9).
+
 ### 2026-08-19 — Trigpoint `1234b7b`
 
 Fedora 44, kernel 7.1.8, Wayland under KDE Plasma, tmux 3.7b, Go 1.26.2. Konsole 26.04.3
@@ -337,13 +428,19 @@ Nothing was raised against any step. One query — a `trig_*` session still list
 
 ## Not yet covered
 
-SPEC §14 names kitty, alacritty, wezterm, foot, and Terminal.app. None of those five has
-been run — the development machine has Konsole and Ghostty on Linux/Wayland only, and
-Terminal.app needs macOS, which M5 targets as a release platform (`darwin/arm64`).
+Of the five terminals SPEC §14 names, three — kitty, alacritty and foot — are covered above.
+Two are not, and neither can be run on the machine this project is developed on:
 
-Konsole covers the Qt/KDE family and Ghostty the GPU-accelerated one, so the pair that has
-been run is not redundant, but it is not the whole list either. Nothing has been run on
-macOS at all, and nothing outside Wayland.
+- **wezterm.** Not packaged for Fedora 44. It can be had from Flathub, but a sandboxed
+  build is a different thing to test than a native one, so it is recorded as not run rather
+  than run under a caveat.
+- **Terminal.app.** Needs macOS, and there is no Apple hardware here. M5 is the first
+  milestone to build for `darwin/arm64`, so this is the run to make on whatever machine
+  produces or first installs that binary. `scripts/handoff-harness.sh` will not help there:
+  it drives Wayland through `ydotool`. Steps 1–10 by hand, as written above.
+
+Beyond that list, nothing has been run outside Wayland — no X11, and no ssh session, where
+tmux's `escape-time` is most likely to make `M-Escape` intermittent.
 
 Tracked as #27, which blocks the release issue (#21). The handoff code is the same on every
 emulator, and what differs is exactly what only an emulator can show.
