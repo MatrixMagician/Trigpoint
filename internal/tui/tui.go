@@ -35,6 +35,7 @@ const (
 	modeRename
 	modeTags
 	modeBulkTags
+	modeGroupTitle
 	modeColour
 	modeWorkspace
 	modeNewWorkspace
@@ -57,6 +58,7 @@ type Model struct {
 	status        string       // the last failure, shown until the next action
 	pending       []state.Node // nodes whose sessions tmux has not confirmed yet
 	killing       []string     // the nodes x was pressed on, held until y or n
+	grouping      []string     // the nodes g was pressed on, held until the name is in
 	respawning    string       // the dead node Enter was pressed on, held until y or n
 	creating      state.Kind   // the kind the title prompt is collecting a name for
 	editing       string       // the node an attribute prompt was opened on
@@ -171,6 +173,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateTags(msg)
 		case modeBulkTags:
 			return m.updateBulkTags(msg)
+		case modeGroupTitle:
+			return m.updateGroupTitle(msg)
 		case modeColour:
 			return m.updateColour(msg)
 		case modeWorkspace:
@@ -248,6 +252,8 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.editAttr(modeTags, func(n state.Node) string { return strings.Join(n.Tags, " ") })
 	case "v":
 		return m.toggleSelect()
+	case "g":
+		return m.group()
 	case "c":
 		return m.cycleColour()
 	case "C":
@@ -341,6 +347,9 @@ func (m Model) statusBar() string {
 		return m.bar(statusStyle, "Rename: "+flatten(m.input)+"▏")
 	case m.mode == modeTags:
 		return m.bar(statusStyle, "Tags: "+flatten(m.input)+"▏")
+	case m.mode == modeGroupTitle:
+		return m.bar(statusStyle, fmt.Sprintf("Group %s: %s▏",
+			pluralise(len(m.grouping), "node"), flatten(m.input)))
 	case m.mode == modeBulkTags:
 		// The prompt says which way round the two verbs are, because a bulk
 		// edit that silently set the tags instead would be unrecoverable.

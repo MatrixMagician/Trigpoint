@@ -205,4 +205,4 @@ func editTags(tags, add, drop []string) []string {
 // gathered (§7.1). They replace the general ones rather than joining them: the
 // keys that mean something different with several nodes gathered are the ones
 // worth the width.
-const selectionHints = "HJKL move · t tags · x kill · esc clear"
+const selectionHints = "HJKL move · g group · t tags · x kill · esc clear"

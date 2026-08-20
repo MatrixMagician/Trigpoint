@@ -17,7 +17,7 @@ several workspaces to switch between work; the rest of the spec does not exist y
 | M0 | Skeleton — config, workspace store, `trig doctor` | done |
 | M1 | Nodes on a map — create/kill shell nodes, cursor and node movement, attach handoff | done |
 | M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | done |
-| M3 | Organisation — colours, tags, sizes, workspaces, groups, filter, palette | in progress (groups to come) |
+| M3 | Organisation — colours, tags, sizes, workspaces, groups, filter, palette | in progress (group movement to come) |
 | M4 | Agents — agent nodes, status badges, attention jump | to do |
 | M5 | Polish and release | to do |
 
@@ -84,7 +84,8 @@ What is bound today:
 | `s` | Cycle its card size, small → medium → large |
 | `A` | Adopt a tmux session Trigpoint did not create — `j`/`k` to choose, `Enter` to adopt |
 | `x` | Kill the node under the cursor and its session (asks first; a note or a dead node is just removed). With a selection gathered, one confirmation names the count and kills all of them |
-| `v` | Visual select — gather the node under the cursor, or let go of one already gathered. The motion keys then extend the selection, and `H J K L`, `t`, and `x` act on all of it at once; `Esc` clears it |
+| `v` | Visual select — gather the node under the cursor, or let go of one already gathered. The motion keys then extend the selection, and `H J K L`, `g`, `t`, and `x` act on all of it at once; `Esc` clears it |
+| `g` | Group — gathers the selection together and draws a named rectangle round it. With the cursor already inside a group, adds the selection to that one instead |
 | `Tab` / `Shift-Tab` | Next / previous workspace, in name order |
 | `w` | Workspace picker — `j`/`k` to choose, `Enter` to open, `n` new, `x` delete |
 | `/` | Filter the map — narrows as you type, `Enter` keeps it, `Esc` clears it |
@@ -147,13 +148,36 @@ The tags are on the bottom border rather than beside the title because a card is
 wide and that is not enough for both — the kind and the age leave room where a real title
 does not. The kind and the age never give way; the tags take what is left, are cut with an
 ellipsis when that is not enough, and go entirely below a few cells. See
-[ADR 0009](docs/adr/0009-tags-live-on-the-bottom-border.md).
+[ADR 0009](docs/adr/0009-tags-live-on-the-bottom-border.md). A card inside a group carries
+the group's name there too, in front of the tags.
 
 Movement never refuses. `L` into an occupied cell shoves the occupant one cell right, and
-whatever is behind it too: one collision rule, which groups will reuse unchanged.
+whatever is behind it too: one collision rule, which groups reuse unchanged.
 
 The cursor position and the viewport are saved with the workspace, so reopening Trigpoint
 puts you back where you were looking.
+
+## Groups
+
+A group is a named, coloured rectangle of the map, and a node is in it exactly when its cell
+falls inside. There is no membership list: what is drawn is the whole of what is stored, so
+nothing can be listed as a member and rendered outside the box. See
+[ADR 0001](docs/adr/0001-groups-are-spatial.md).
+
+`g` on a selection asks for a name and draws the rectangle. It gathers the selected nodes
+together first — into the nearest block of cells nobody else is standing on — so the
+rectangle is tight rather than sprawling across everything that happened to lie between its
+members. With the cursor already inside a group, `g` adds the selection to that group
+instead, moving each node into a free cell inside the rectangle and growing the rectangle
+when there is none, shoving whoever stood where it grew to. Which of the two `g` does is
+decided by where the cursor is and nothing else; see
+[ADR 0012](docs/adr/0012-g-decides-by-where-the-cursor-is.md).
+
+Because membership is containment, moving a node out of a rectangle takes it out of the
+group, and so does shrinking a rectangle past it. Member cards carry the group's name on
+their bottom border beside their tags, so that happens visibly rather than silently.
+
+To associate nodes that sit apart, use tags: groups *are* the map, tags cross it freely.
 
 ## Workspaces
 

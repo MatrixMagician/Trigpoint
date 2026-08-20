@@ -14,7 +14,7 @@ import (
 // bug — this is the list that says so.
 var bindings = []string{
 	"enter", " ", "n", "N", "A", "x", "q", "r", "c", "C", "t", "s",
-	"tab", "shift+tab", "w", "/", "esc",
+	"tab", "shift+tab", "w", "/", "esc", "v", "g",
 	"h", "j", "k", "l", "H", "J", "K", "L", "0", "z",
 }
 
