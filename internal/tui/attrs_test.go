@@ -444,7 +444,7 @@ func TestASmallNoteStillShowsALine(t *testing.T) {
 func TestTagsSitOnTheBottomBorder(t *testing.T) {
 	lines := card(state.Node{
 		ID: "k4f2", Kind: state.KindShell, Title: "api", Tags: []string{"infra"},
-	}, false, false, false, 0, nil)
+	}, false, false, false, false, 0, nil)
 	top, bottom := lines[0], lines[len(lines)-1]
 
 	if strings.Contains(top, "#") {
@@ -463,7 +463,7 @@ func TestTagsSitOnTheBottomBorder(t *testing.T) {
 func TestALongTitleNoLongerCostsTheTags(t *testing.T) {
 	lines := card(state.Node{
 		ID: "k4f2", Kind: state.KindShell, Title: "a-very-long-node-name", Tags: []string{"infra"},
-	}, false, false, false, 0, nil)
+	}, false, false, false, false, 0, nil)
 
 	if !strings.Contains(lines[0], "a-very-long-n") {
 		t.Errorf("the title should have the whole top border, got %q", lines[0])
@@ -482,7 +482,7 @@ func TestTheKindAndAgeOutrankTheTags(t *testing.T) {
 		Tags:      []string{"infrastructure", "on-call", "eu-west"},
 		CreatedAt: time.Now().Add(-3 * time.Hour),
 	}
-	bottom := card(n, false, false, false, 0, nil)
+	bottom := card(n, false, false, false, false, 0, nil)
 	last := bottom[len(bottom)-1]
 
 	if !strings.Contains(last, "sh · 3h") {
@@ -505,7 +505,7 @@ func TestATaggedCardIsStillACardWide(t *testing.T) {
 	} {
 		for _, title := range []string{"api", "a-very-long-node-name", "日本語のノードタイトル"} {
 			n := state.Node{ID: "k4f2", Kind: state.KindShell, Title: title, Tags: tags}
-			for _, line := range card(n, false, false, false, 1, []string{"body"}) {
+			for _, line := range card(n, false, false, false, false, 1, []string{"body"}) {
 				if w := lipgloss.Width(line); w != cardWidth {
 					t.Errorf("a card line for %q/%q is %d cells wide, want %d: %q", title, tags, w, cardWidth, line)
 				}

@@ -97,6 +97,9 @@ func (m Model) moveCursor(d state.Cell, n int) Model {
 			break
 		}
 		m.ws.Viewport.Cursor = next
+		// Every node the cursor passes joins a selection being gathered, not
+		// only the one a count lands on: 3l is three presses of l.
+		m = m.extend()
 	}
 	return m.follow()
 }
@@ -130,16 +133,21 @@ func earlier(a, b state.Cell) bool {
 	return a.Col < b.Col
 }
 
-// moveNode walks the selected node n cells, shoving whatever it meets. The
-// cursor rides along: it is the node that was selected, not the cell, and
-// letting the selection fall off after one press would make H a one-shot key.
+// moveNode walks the selection n cells, shoving whatever it meets. The cursor
+// rides along: it is the node that was selected, not the cell, and letting the
+// selection fall off after one press would make H a one-shot key.
+//
+// One node or several is the same code and the same collision rule: Shift takes
+// the ids it is given, so a gathered selection moves as a unit — every member
+// steps together, which is what keeps their relative positions — and shoves
+// every bystander in its path (§7.3).
 func (m Model) moveNode(d state.Cell, n int) Model {
-	node, ok := m.selected()
-	if !ok {
+	ids := m.targets()
+	if len(ids) == 0 {
 		return m
 	}
 	for i := 0; i < n; i++ {
-		m.ws.Nodes = m.ws.Shift([]string{node.ID}, d)
+		m.ws.Nodes = m.ws.Shift(ids, d)
 		m.ws.Viewport.Cursor = state.Cell{
 			Col: m.ws.Viewport.Cursor.Col + d.Col,
 			Row: m.ws.Viewport.Cursor.Row + d.Row,
