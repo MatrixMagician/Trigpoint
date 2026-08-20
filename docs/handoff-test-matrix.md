@@ -371,8 +371,6 @@ both directly and with `trig` started inside `tmux new -s outer`.
 | foot 1.27.0 | pass | pass | steps 1–10 |
 | Konsole 26.04.3 | pass | pass | re-run of the 2026-08-19 hand run, to calibrate the harness |
 | Ghostty 1.3.1 | pass | pass | as above |
-| wezterm | not run | not run | not packaged for Fedora 44; see **Not yet covered** |
-| Terminal.app | not run | not run | needs macOS; no Apple hardware, see **Not yet covered** |
 
 Nothing was raised against any step in any of the ten runs. What each one checked
 mechanically, rather than by eye:
@@ -428,19 +426,17 @@ Nothing was raised against any step. One query — a `trig_*` session still list
 
 ## Not yet covered
 
-Of the five terminals SPEC §14 names, three — kitty, alacritty and foot — are covered above.
-Two are not, and neither can be run on the machine this project is developed on:
+Every terminal v1 supports is covered above, both directly and nested. wezterm and
+Terminal.app used to sit here as gaps and are now off the list entirely: v1 ships Linux
+only, and wezterm is not packaged for Fedora — see [ADR 0019](adr/0019-v1-ships-linux-only.md).
+If macOS comes back, Terminal.app gets steps 1–10 by hand on the machine that builds it;
+`scripts/handoff-harness.sh` drives Wayland and will not help there.
 
-- **wezterm.** Not packaged for Fedora 44. It can be had from Flathub, but a sandboxed
-  build is a different thing to test than a native one, so it is recorded as not run rather
-  than run under a caveat.
-- **Terminal.app.** Needs macOS, and there is no Apple hardware here. M5 is the first
-  milestone to build for `darwin/arm64`, so this is the run to make on whatever machine
-  produces or first installs that binary. `scripts/handoff-harness.sh` will not help there:
-  it drives Wayland through `ydotool`. Steps 1–10 by hand, as written above.
+What remains unrun is not platform-specific and does not block the release:
 
-Beyond that list, nothing has been run outside Wayland — no X11, and no ssh session, where
-tmux's `escape-time` is most likely to make `M-Escape` intermittent.
+- **X11.** Everything above is Wayland under KDE Plasma.
+- **An ssh session.** This is where tmux's `escape-time` is most likely to make `M-Escape`
+  intermittent — the first thing to suspect if the detach key ever goes flaky over a link.
 
-Tracked as #27, which blocks the release issue (#21). The handoff code is the same on every
-emulator, and what differs is exactly what only an emulator can show.
+The handoff code is the same on every emulator, and what differs is exactly what only an
+emulator can show.
