@@ -465,9 +465,16 @@ func (m Model) cards() string {
 
 	body := m.bodyHeight()
 	blank := strings.Repeat(" ", cardWidth)
+	// The groups are drawn first and the cards over them: the gaps between
+	// cells are where a group's walls and its tint live, so laying the cards
+	// down last is what puts a group behind its members (§7.1).
+	frame := m.groupFrame(minCell, maxCell)
+	gap := func(col, y int) string { return frame[y][(col-minCell.Col)*(cardWidth+cellGap)] }
 
 	var rows []string
 	for row := minCell.Row; row <= maxCell.Row; row++ {
+		top := (row - minCell.Row) * m.cardRows()
+		rows = append(rows, strings.Join(frame[top], ""))
 		lines := make([]strings.Builder, m.cardRows()-1)
 		for col := minCell.Col; col <= maxCell.Col; col++ {
 			cell := state.Cell{Col: col, Row: row}
@@ -475,12 +482,10 @@ func (m Model) cards() string {
 			drawn := []string(nil)
 			if ok {
 				drawn = card(m.shown(node), m.drawnSelected(node), m.isSelected(node.ID),
-					m.dead[node.ID], m.unread[node.ID], body, m.bodyOf(node))
+					m.dead[node.ID], m.unread[node.ID], m.groupOf(node), body, m.bodyOf(node))
 			}
 			for i := range lines {
-				if col > minCell.Col {
-					lines[i].WriteString(strings.Repeat(" ", cellGap))
-				}
+				lines[i].WriteString(gap(col, top+1+i))
 				if !ok {
 					lines[i].WriteString(blank)
 					continue
@@ -489,11 +494,11 @@ func (m Model) cards() string {
 			}
 		}
 		for i := range lines {
+			lines[i].WriteString(gap(maxCell.Col+1, top+1+i))
 			rows = append(rows, lines[i].String())
 		}
-		rows = append(rows, "")
 	}
-	return strings.Join(rows[:len(rows)-1], "\n")
+	return strings.Join(append(rows, strings.Join(frame[len(frame)-1], "")), "\n")
 }
 
 // bounds is the rectangle of cells worth drawing: the viewport offset, and as
@@ -510,9 +515,13 @@ func (m Model) bounds() (min, max state.Cell) {
 
 // viewCells is how many cells of map the terminal has room for. Never zero:
 // there is always a cell under the cursor, however small the window.
+//
+// Every cell is drawn with its gap in front of it and the grid keeps one more
+// at each far edge, so that a group rectangle drawn in the gaps has somewhere
+// to put its walls whichever cell the viewport starts at.
 func (m Model) viewCells() (cols, rows int) {
-	return maxInt((m.width+cellGap)/(cardWidth+cellGap), 1),
-		maxInt((m.height-1+cellGap)/m.cardRows(), 1)
+	return maxInt((m.width-cellGap)/(cardWidth+cellGap), 1),
+		maxInt((m.height-1-1)/m.cardRows(), 1)
 }
 
 // bodyOf is what fills a node's card: the preview last captured for a session,
@@ -541,7 +550,7 @@ func (m Model) bodyOf(n state.Node) []string {
 // card is a node's rendering on the map: a border carrying its title, the body
 // lines beneath it, and a border carrying its kind and age. Cards are never
 // persisted; nodes are.
-func card(n state.Node, cursor, inSelection, dead, unread bool, body int, content []string) []string {
+func card(n state.Node, cursor, inSelection, dead, unread bool, group string, body int, content []string) []string {
 	style := cardStyle
 	accented, hasAccent := accent(n.Colour)
 	switch {
@@ -585,15 +594,15 @@ func card(n state.Node, cursor, inSelection, dead, unread bool, body int, conten
 	// the fixed half and never give way; below a few cells there is no room to
 	// say anything, so the tags go rather than shrink to a bare ellipsis.
 	foot := "─╯"
-	if tags := tagLabel(n.Tags); tags != "" {
+	if label := strings.TrimSpace(group + " " + tagLabel(n.Tags)); label != "" {
 		spare := cardWidth - lipgloss.Width(footLead) - lipgloss.Width(trail) - tagOverhead
 		if spare >= minTagWidth {
-			foot = " " + truncate(tags, spare) + " ─╯"
+			foot = " " + truncate(label, spare) + " ─╯"
 		}
 	}
 
 	lines := make([]string, 0, body+2)
-	lines = append(lines, style.Render(border(lead, n.Title, "─╮")))
+	lines = append(lines, style.Render(border(cardWidth, lead, n.Title, "─╮")))
 	for i := 0; i < body; i++ {
 		text := ""
 		if i < len(content) {
@@ -601,7 +610,7 @@ func card(n state.Node, cursor, inSelection, dead, unread bool, body int, conten
 		}
 		lines = append(lines, bodyLine(style, text))
 	}
-	return append(lines, style.Render(border(footLead, trail, foot)))
+	return append(lines, style.Render(border(cardWidth, footLead, trail, foot)))
 }
 
 // bodyLine is one line inside a card, padded with spaces rather than the rule
@@ -637,8 +646,12 @@ func closeStyling(text string) string {
 	return text
 }
 
-func border(lead, text, tail string) string {
-	room := cardWidth - lipgloss.Width(lead) - lipgloss.Width(tail) - 1 // the space before the tail
+// border is one edge of a box: a lead, a label, and a rule filling the rest out
+// to width. Cards and group rectangles are both drawn with it, which is what
+// makes a group read as a box on the map rather than as a different kind of
+// thing.
+func border(width int, lead, text, tail string) string {
+	room := width - lipgloss.Width(lead) - lipgloss.Width(tail) - 1 // the space before the tail
 	text = truncate(text, room)
 	fill := room - lipgloss.Width(text)
 	return lead + text + " " + strings.Repeat("─", maxInt(fill, 0)) + tail

@@ -316,6 +316,11 @@ func (ws Workspace) NewNodeID() string {
 	for _, n := range ws.Nodes {
 		taken[n.ID] = true
 	}
+	return uniqueID(taken)
+}
+
+// uniqueID draws a slug nothing in taken is already using.
+func uniqueID(taken map[string]bool) string {
 	for {
 		if id := newID(); !taken[id] {
 			return id
