@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/MatrixMagician/Trigpoint/internal/config"
 	"github.com/MatrixMagician/Trigpoint/internal/state"
@@ -238,5 +239,69 @@ func TestNamingAGroupOfNodesThatHaveGoneMakesNothing(t *testing.T) {
 
 	if len(m.ws.Groups) != 0 {
 		t.Errorf("a group with no cells in it should not be made, got %+v", m.ws.Groups)
+	}
+}
+
+// TestANewGroupIsNotDrawnInsideAnother is what containment costs: GroupAt hands
+// a cell to the first group holding it, so a rect inside another rect would be
+// a group its own members were never in.
+func TestANewGroupIsNotDrawnInsideAnother(t *testing.T) {
+	m := newModel(t, config.Default(), state.Workspace{Name: "main",
+		Nodes: []state.Node{
+			{ID: "aaa", Kind: state.KindShell, Title: "api", Pos: state.Cell{Col: 5, Row: 5}},
+			{ID: "bbb", Kind: state.KindShell, Title: "web", Pos: state.Cell{Col: 6, Row: 5}},
+		},
+		Groups:   []state.Group{{ID: "g1", Title: "big", Colour: "cyan", Rect: state.Rect{Max: state.Cell{Col: 10, Row: 10}}}},
+		Viewport: state.Viewport{Cursor: state.Cell{Col: 5, Row: 5}},
+	})
+	// The cursor is moved off the group first, or g would join it rather than
+	// make one; the selection is gathered before the walk out.
+	m = pressKeys(t, m, "v", "l")
+	m.ws.Viewport.Cursor = state.Cell{Col: 20, Row: 20}
+	m = pressKeys(t, m, "g")
+	m, _ = typeKeys(t, m, "small")
+	m, _ = press(t, m, tea.KeyEnter)
+
+	if len(m.ws.Groups) != 2 {
+		t.Fatalf("expected the new group alongside the old, got %+v", m.ws.Groups)
+	}
+	small := m.ws.Groups[1]
+	if small.Rect.Overlaps(m.ws.Groups[0].Rect) {
+		t.Fatalf("the new rect %+v was drawn inside %+v", small.Rect, m.ws.Groups[0].Rect)
+	}
+	for _, id := range []string{"aaa", "bbb"} {
+		if n, _ := m.node(id); m.groupOf(n) != "small" {
+			t.Errorf("%s is in %q rather than the group it was just put in", id, m.groupOf(n))
+		}
+	}
+}
+
+func TestAGroupNameDoesNotCostACardItsTags(t *testing.T) {
+	n := state.Node{ID: "k4f2", Kind: state.KindShell, Title: "api", Tags: []string{"prod"}}
+	lines := card(n, false, false, false, false, "infrastructure", 0, nil)
+
+	bottom := lines[len(lines)-1]
+	if !strings.Contains(bottom, "#") {
+		t.Errorf("the group took the whole border and left no tag at all: %q", bottom)
+	}
+	if !strings.Contains(bottom, "inf") {
+		t.Errorf("the bottom border should still name the group, got %q", bottom)
+	}
+}
+
+func TestEveryLineOfTheMapIsTheSameWidth(t *testing.T) {
+	// A group title of double-width runes, on a rect running off the side of the
+	// screen: a rune drawn half in and half out of the frame would leave one row
+	// wider than the rest, and the whole map centred against it.
+	m := groupedMap(t, state.Rect{Max: state.Cell{Col: 40, Row: 2}})
+	m.ws.Groups[0].Title = "a" + strings.Repeat("漢", 30)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 50, Height: 20})
+	m = sized.(Model)
+
+	lines := strings.Split(m.View(), "\n")
+	for i, line := range lines {
+		if got := lipgloss.Width(line); got != lipgloss.Width(lines[0]) {
+			t.Fatalf("line %d is %d cells wide, line 0 is %d:\n%s", i, got, lipgloss.Width(lines[0]), m.View())
+		}
 	}
 }

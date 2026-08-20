@@ -157,6 +157,9 @@ func colourCode(name string) (string, bool) {
 // ponytail: one styled string per cell, so a tinted group costs an escape
 // sequence per space it covers. It is a screenful at most, once per frame.
 func (m Model) groupFrame(min, max state.Cell) [][]string {
+	if len(m.ws.Groups) == 0 {
+		return nil
+	}
 	cols, rows := max.Col-min.Col+1, max.Row-min.Row+1
 	width, height := cols*(cardWidth+cellGap)+cellGap, rows*m.cardRows()+1
 	grid := make([][]string, height)
@@ -219,9 +222,12 @@ func place(grid [][]string, x, y int, text string, style lipgloss.Style) {
 	}
 	for _, r := range text {
 		width := lipgloss.Width(string(r))
-		if x >= 0 && x < len(grid[y]) {
+		// Every cell the rune needs, or none of them: half a wide rune at the
+		// edge of the frame would draw two cells into a row with one left, and
+		// shear that line against every other.
+		if x >= 0 && x+width <= len(grid[y]) {
 			grid[y][x] = style.Render(string(r))
-			for i := 1; i < width && x+i < len(grid[y]); i++ {
+			for i := 1; i < width; i++ {
 				// The cell the wide rune spills into is already drawn; anything
 				// left in it would push the rest of the line along.
 				grid[y][x+i] = ""

@@ -468,13 +468,26 @@ func (m Model) cards() string {
 	// The groups are drawn first and the cards over them: the gaps between
 	// cells are where a group's walls and its tint live, so laying the cards
 	// down last is what puts a group behind its members (§7.1).
+	// nil on a map with no groups: the gaps are then spaces and nothing else,
+	// and a screenful of styled cells is not worth building to say so.
 	frame := m.groupFrame(minCell, maxCell)
-	gap := func(col, y int) string { return frame[y][(col-minCell.Col)*(cardWidth+cellGap)] }
+	gap := func(col, y int) string {
+		if frame == nil {
+			return " "
+		}
+		return frame[y][(col-minCell.Col)*(cardWidth+cellGap)]
+	}
+	gapRow := func(y int) string {
+		if frame == nil {
+			return strings.Repeat(" ", (maxCell.Col-minCell.Col+1)*(cardWidth+cellGap)+cellGap)
+		}
+		return strings.Join(frame[y], "")
+	}
 
 	var rows []string
 	for row := minCell.Row; row <= maxCell.Row; row++ {
 		top := (row - minCell.Row) * m.cardRows()
-		rows = append(rows, strings.Join(frame[top], ""))
+		rows = append(rows, gapRow(top))
 		lines := make([]strings.Builder, m.cardRows()-1)
 		for col := minCell.Col; col <= maxCell.Col; col++ {
 			cell := state.Cell{Col: col, Row: row}
@@ -498,7 +511,7 @@ func (m Model) cards() string {
 			rows = append(rows, lines[i].String())
 		}
 	}
-	return strings.Join(append(rows, strings.Join(frame[len(frame)-1], "")), "\n")
+	return strings.Join(append(rows, gapRow((maxCell.Row-minCell.Row+1)*m.cardRows())), "\n")
 }
 
 // bounds is the rectangle of cells worth drawing: the viewport offset, and as
@@ -594,11 +607,9 @@ func card(n state.Node, cursor, inSelection, dead, unread bool, group string, bo
 	// the fixed half and never give way; below a few cells there is no room to
 	// say anything, so the tags go rather than shrink to a bare ellipsis.
 	foot := "─╯"
-	if label := strings.TrimSpace(group + " " + tagLabel(n.Tags)); label != "" {
-		spare := cardWidth - lipgloss.Width(footLead) - lipgloss.Width(trail) - tagOverhead
-		if spare >= minTagWidth {
-			foot = " " + truncate(label, spare) + " ─╯"
-		}
+	if label := footLabel(group, n.Tags,
+		cardWidth-lipgloss.Width(footLead)-lipgloss.Width(trail)-tagOverhead); label != "" {
+		foot = " " + label + " ─╯"
 	}
 
 	lines := make([]string, 0, body+2)
@@ -611,6 +622,30 @@ func card(n state.Node, cursor, inSelection, dead, unread bool, group string, bo
 		lines = append(lines, bodyLine(style, text))
 	}
 	return append(lines, style.Render(border(cardWidth, footLead, trail, foot)))
+}
+
+// footLabel is what the bottom border carries after the kind and the age: the
+// group the node's cell falls inside, and then its tags. The group goes first
+// because it is the one that changes on its own — a card shoved out of a
+// rectangle leaves the group without anybody editing anything — and it is held
+// to what it can take without costing the card its tags, so that joining a
+// group is not a silent way to lose them.
+//
+// Below room for both, the tags go rather than both shrinking to a pair of
+// ellipses. That is ADR 0009's own rule about the kind and the age, one label
+// further along: what is left has to be able to say something.
+func footLabel(group string, tags []string, room int) string {
+	tagged := tagLabel(tags)
+	switch {
+	case room < minTagWidth:
+		return ""
+	case group == "":
+		return truncate(tagged, room)
+	case tagged == "" || room < 2*minTagWidth+1:
+		return truncate(group, room)
+	}
+	group = truncate(group, room-minTagWidth-1)
+	return group + " " + truncate(tagged, room-lipgloss.Width(group)-1)
 }
 
 // bodyLine is one line inside a card, padded with spaces rather than the rule

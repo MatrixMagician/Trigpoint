@@ -29,6 +29,18 @@ func (r Rect) Size() (cols, rows int) {
 	return cols, rows
 }
 
+// Overlaps reports whether two rects share a cell. An empty rect overlaps
+// nothing: it holds no cells to share.
+func (r Rect) Overlaps(o Rect) bool {
+	rCols, rRows := r.Size()
+	oCols, oRows := o.Size()
+	if rCols == 0 || rRows == 0 || oCols == 0 || oRows == 0 {
+		return false
+	}
+	return r.Min.Col < o.Max.Col && o.Min.Col < r.Max.Col &&
+		r.Min.Row < o.Max.Row && o.Min.Row < r.Max.Row
+}
+
 // GroupAt is the group holding a cell, and is the only thing membership ever
 // means. The first of them on a map whose rects overlap: a workspace file is a
 // file, and two rects hand-edited across one another have to resolve somehow.
@@ -112,12 +124,24 @@ func (ws Workspace) Join(r Rect, ids []string) ([]Node, Rect) {
 // bystander would absorb it into the group, which is the one thing containment
 // as membership must never do silently.
 func (ws Workspace) grow(r Rect) (Workspace, Rect) {
+	right := Cell{Col: 1}
+	rightStrip := Rect{Min: Cell{Col: r.Max.Col, Row: r.Min.Row}, Max: Cell{Col: r.Max.Col + 1, Row: r.Max.Row}}
+	down := Cell{Row: 1}
+	downStrip := Rect{Min: Cell{Col: r.Min.Col, Row: r.Max.Row}, Max: Cell{Col: r.Max.Col, Row: r.Max.Row + 1}}
+
 	cols, rows := r.Size()
-	d := Cell{Col: 1}
-	strip := Rect{Min: Cell{Col: r.Max.Col, Row: r.Min.Row}, Max: Cell{Col: r.Max.Col + 1, Row: r.Max.Row}}
+	d, strip, other, otherStrip := right, rightStrip, down, downStrip
 	if cols > rows {
-		d = Cell{Row: 1}
-		strip = Rect{Min: Cell{Col: r.Min.Col, Row: r.Max.Row}, Max: Cell{Col: r.Max.Col, Row: r.Max.Row + 1}}
+		d, strip, other, otherStrip = down, downStrip, right, rightStrip
+	}
+	// Squarer is only a preference. Growing into another group's rect would
+	// leave two groups sharing cells, and containment hands every node in the
+	// overlap to whichever was drawn first — so the other way round is taken
+	// when the squarer way is spoken for.
+	// ponytail: a group boxed in on both sides overlaps anyway; there is nowhere
+	// else for it to go, and refusing the join would be a worse answer.
+	if ws.groupIn(strip) && !ws.groupIn(otherStrip) {
+		d, strip = other, otherStrip
 	}
 	var inTheWay []string
 	for _, n := range ws.Nodes {
@@ -130,6 +154,16 @@ func (ws Workspace) grow(r Rect) (Workspace, Rect) {
 	}
 	r.Max = Cell{Col: r.Max.Col + d.Col, Row: r.Max.Row + d.Row}
 	return ws, r
+}
+
+// groupIn reports whether any group already reaches into these cells.
+func (ws Workspace) groupIn(r Rect) bool {
+	for _, g := range ws.Groups {
+		if r.Overlaps(g.Rect) {
+			return true
+		}
+	}
+	return false
 }
 
 // freeCellIn is the first cell of r no node stands on, in reading order.
@@ -171,8 +205,17 @@ func (ws Workspace) freeBlock(anchor Cell, cols, rows int, ids []string) Rect {
 	}
 }
 
-// clearOf reports whether r holds nobody but the nodes named.
+// clearOf reports whether r holds nobody but the nodes named, and lies clear of
+// every group already on the map. Clear of them because containment finds the
+// first group holding a cell: a rect drawn inside another one would be a group
+// its own members were never in, drawn on a map that said they were somewhere
+// else.
 func (ws Workspace) clearOf(r Rect, member map[string]bool) bool {
+	for _, g := range ws.Groups {
+		if r.Overlaps(g.Rect) {
+			return false
+		}
+	}
 	for _, n := range ws.Nodes {
 		if !member[n.ID] && r.Contains(n.Pos) {
 			return false

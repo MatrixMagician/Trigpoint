@@ -163,3 +163,32 @@ func TestNewGroupIDIsNotOneAlreadyTaken(t *testing.T) {
 		}
 	}
 }
+
+func TestGatherKeepsClearOfAGroupAlreadyDrawn(t *testing.T) {
+	ws := Workspace{
+		Nodes:  []Node{{ID: "a", Pos: Cell{Col: 5, Row: 5}}, {ID: "b", Pos: Cell{Col: 6, Row: 5}}},
+		Groups: []Group{{ID: "g1", Rect: Rect{Max: Cell{Col: 10, Row: 10}}}},
+	}
+	_, rect := ws.Gather([]string{"a", "b"})
+	if rect.Overlaps(ws.Groups[0].Rect) {
+		t.Errorf("the gathered rect %+v shares cells with %+v", rect, ws.Groups[0].Rect)
+	}
+}
+
+func TestGrowingTurnsAsideFromAnotherGroup(t *testing.T) {
+	// Full, and squarest by growing right — but another group is drawn in the
+	// column it would grow into, so it has to go down instead.
+	rect := Rect{Max: Cell{Col: 1, Row: 1}}
+	ws := Workspace{
+		Nodes: []Node{{ID: "a"}, {ID: "j", Pos: Cell{Col: 8, Row: 8}}},
+		Groups: []Group{
+			{ID: "g1", Rect: rect},
+			{ID: "g2", Rect: Rect{Min: Cell{Col: 1}, Max: Cell{Col: 3, Row: 1}}},
+		},
+	}
+	_, grown := ws.Join(rect, []string{"j"})
+
+	if grown.Overlaps(ws.Groups[1].Rect) {
+		t.Errorf("the grown rect %+v reaches into the group at %+v", grown, ws.Groups[1].Rect)
+	}
+}
