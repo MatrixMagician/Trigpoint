@@ -266,7 +266,11 @@ func (m Model) hold() (tea.Model, tea.Cmd) {
 	g, ok := m.ws.GroupAt(m.ws.Viewport.Cursor)
 	if !ok {
 		// The cursor is in no group, and a hold on nothing would still take the
-		// motion keys away from the map.
+		// motion keys away from the map. It says so rather than doing nothing
+		// quietly: `x` means one thing with a group in hand and another
+		// without, so a hold that silently failed is a kill prompt nobody
+		// asked for two keystrokes later.
+		m.status = "No group under the cursor."
 		return m, nil
 	}
 	// The selection goes: both want HJKL, and a held group is the newer answer
@@ -304,13 +308,16 @@ func (m Model) updateHeld(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
-	if m.ws.Viewport.Offset == looking {
-		return m, nil
+	// Cards that have never been captured, and — if the viewport moved — every
+	// card now on screen: off screen is where activity events are dropped, so a
+	// card scrolled to has been unwatched however recently it was captured.
+	// This is the map path's own rule (§8); a group is wide enough to carry a
+	// card into view without the viewport moving at all.
+	stale := m.unpreviewed()
+	if m.ws.Viewport.Offset != looking {
+		stale = m.visible()
 	}
-	// Off screen is where activity events are dropped, so a card the move
-	// scrolled to has been unwatched however recently it was captured — the
-	// same reason a motion that scrolls marks them (§8).
-	next, cmd := m.markDirty(m.visible()...)
+	next, cmd := m.markDirty(stale...)
 	return next, cmd
 }
 
@@ -353,7 +360,15 @@ func (m Model) resizeGroup(d state.Cell) Model {
 	}
 	m.ws.Nodes, m.ws.Groups = nodes, m.withRect(m.holding, rect)
 	m.held = m.ws.Members(rect)
-	return m.save()
+	// An edge pulled in past the cursor leaves it outside the rectangle, and
+	// the viewport follows the cursor: the next move would scroll the held
+	// group off the screen and go on moving something no longer on it. So the
+	// cursor comes back in with the edge.
+	m.ws.Viewport.Cursor = state.Cell{
+		Col: clamp(m.ws.Viewport.Cursor.Col, rect.Min.Col, rect.Max.Col-1),
+		Row: clamp(m.ws.Viewport.Cursor.Row, rect.Min.Row, rect.Max.Row-1),
+	}
+	return m.follow().save()
 }
 
 // deleteGroup removes the rectangle and nothing else. A group is a way of

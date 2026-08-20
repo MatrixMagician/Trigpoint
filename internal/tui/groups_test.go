@@ -529,3 +529,23 @@ func TestTheCursorOnlyRidesAGroupItIsOver(t *testing.T) {
 		t.Errorf("the group should still have moved, aaa is at %+v", got)
 	}
 }
+
+func TestShrinkingPastTheCursorBringsItBackIn(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "l", "V") // the cursor on bbb, at the far column
+	m = pressKeys(t, m, "h")
+
+	rect := m.ws.Groups[0].Rect
+	if !rect.Contains(m.ws.Viewport.Cursor) {
+		t.Errorf("the cursor at %+v was left outside the rect %+v it is holding",
+			m.ws.Viewport.Cursor, rect)
+	}
+}
+
+func TestVOnNoGroupSaysSoRatherThanFailingQuietly(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "l", "l", "V") // out to ccc, which is in no group
+	if m.status == "" {
+		t.Error("a hold that could not happen should say why: x means something else without one")
+	}
+}

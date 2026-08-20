@@ -340,6 +340,9 @@ func (ws Workspace) ResizeGroup(id string, d Cell) ([]Node, Rect, bool) {
 		return nil, Rect{}, false
 	}
 	nodes := ws.Nodes
+	// Growth only, and the guard is what makes leadingStrip the right question
+	// to ask: a resize moves Max and never Min, so a negative d here would ask
+	// about the strip behind the far side of the rectangle.
 	if d.Col > 0 || d.Row > 0 {
 		if inTheWay := ws.Members(leadingStrip(g.Rect, d)); len(inTheWay) > 0 {
 			nodes = ws.Shift(inTheWay, d)
