@@ -217,7 +217,7 @@ type respawnedMsg struct {
 func (m Model) respawn(node state.Node) (tea.Model, tea.Cmd) {
 	sessions, workspace, dir, stamp := m.sessions, m.ws.Name, m.dirOf(node), m.stamp()
 	return m, func() tea.Msg {
-		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, node.Cmd, provenance(workspace, node))
+		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, startCmd(node), provenance(workspace, node))
 		return respawnedMsg{mapStamp: stamp, id: node.ID, err: err}
 	}
 }

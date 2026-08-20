@@ -131,3 +131,33 @@ func TestPathFallsBackToDotConfig(t *testing.T) {
 		t.Errorf("Path() = %q, want %q", got, want)
 	}
 }
+
+func TestAnAgentsTableReplacesThePresets(t *testing.T) {
+	// The presets are the ones config offers and no others: a file that names
+	// its own is a list, not an addition, or a preset shipped by default could
+	// never be got rid of — and choosing one for an agent that is not installed
+	// makes a node whose session runs "command not found".
+	path := filepath.Join(t.TempDir(), "config.toml")
+	write(t, path, "[agents.aider]\ncmd = \"aider\"\n")
+
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Agents) != 1 || got.Agents["aider"].Cmd != "aider" {
+		t.Errorf("agents = %+v, want only the configured one", got.Agents)
+	}
+}
+
+func TestNoAgentsTableKeepsTheDefaultPresets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	write(t, path, "[general]\nconfirm_quit = true\n")
+
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Agents) != len(Default().Agents) {
+		t.Errorf("agents = %+v, want the defaults", got.Agents)
+	}
+}

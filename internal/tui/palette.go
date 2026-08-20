@@ -39,6 +39,10 @@ var commands = []command{
 	{label: "Peek at a node's output", hint: "␣ peek", keys: []string{" "}},
 	{label: "New shell node", hint: "n new", keys: []string{"n"}},
 	{label: "New note", hint: "N note", keys: []string{"N"}},
+	// No status-bar hint: the bar drops its hints from the end, and at eighty
+	// columns one more would cost "q quit" — which is the one hint a first run
+	// most needs.
+	{label: "New agent node (picker: the configured presets, or a command of your own)", keys: []string{"a"}},
 	{label: "Adopt a session", hint: "A adopt", keys: []string{"A"}},
 	{label: "Kill node", hint: "x kill", keys: []string{"x"}},
 	{label: "Quit Trigpoint", hint: "q quit", keys: []string{"q"}},

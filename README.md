@@ -78,6 +78,7 @@ What is bound today:
 | `Space` | Peek: read the node's recent output full-screen, without attaching — `j`/`k`, `Space`/`b`, `g`/`G` scroll, `Esc` returns |
 | `n` | New shell node at the nearest free cell to the cursor |
 | `N` | New note — a rendered markdown card with no session behind it |
+| `a` | New agent node — `j`/`k` to choose a preset from config or `custom…` to type a command, `Enter` to start it. The node stores its command, so a respawn re-runs it; when the agent exits the shell remains |
 | `r` | Rename the node under the cursor |
 | `c` | Cycle its accent colour · `C` pick one by name — `j`/`k` to choose, `Enter` to set |
 | `t` | Edit its tags — space-separated, several to a node. With a selection gathered, `tag` adds to every selected node and `-tag` removes |
@@ -347,13 +348,20 @@ s = 0
 m = 4
 l = 10
 
-[agents.claude]               # presets offered when creating an agent node
+[agents.claude]               # presets `a` offers when creating an agent node
 cmd = "claude"
+
+[agents.codex]                # adding one is an edit here, never a code change
+cmd = "codex"
 ```
 
-`preview_debounce_ms`, `refresh_tick_s`, and `preview_lines` are live; a node that has never
-been sized takes the `m` line count. Settings whose features have not landed yet (agent
-status) are read and stored, but nothing consumes them.
+The `agents` tables are the presets, not additions to them: a file that names any replaces
+`claude` and `codex` entirely, so a preset for an agent you do not have installed can be got
+rid of. A file with no `agents` table keeps both defaults.
+
+`preview_debounce_ms`, `refresh_tick_s`, `preview_lines`, and the `agents` presets are live;
+a node that has never been sized takes the `m` line count. Settings whose features have not
+landed yet (agent status) are read and stored, but nothing consumes them.
 
 ## Files
 

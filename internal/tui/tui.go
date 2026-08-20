@@ -42,6 +42,8 @@ const (
 	modeConfirmDeleteWorkspace
 	modeFilter
 	modePalette
+	modeAgent
+	modeAgentCmd
 )
 
 // Model is the map view's state. The workspace it renders is owned here; the
@@ -61,6 +63,7 @@ type Model struct {
 	grouping      []string     // the nodes g was pressed on, held until the name is in
 	respawning    string       // the dead node Enter was pressed on, held until y or n
 	creating      state.Kind   // the kind the title prompt is collecting a name for
+	creatingCmd   string       // the command an agent node is being created to run
 	editing       string       // the node an attribute prompt was opened on
 	count         string       // the count prefix typed so far, applied to the next motion
 	// selection is the nodes v has gathered (§7.3), by id, in the order they
@@ -195,6 +198,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updatePalette(msg)
 		case modePeek:
 			return m.updatePeek(msg)
+		case modeAgent:
+			return m.updateAgent(msg)
+		case modeAgentCmd:
+			return m.updateAgentCmd(msg)
 		}
 		return m.updateNormal(msg)
 	}
@@ -246,6 +253,8 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode, m.input, m.creating = modeTitle, "", state.KindShell
 	case "N":
 		m.mode, m.input, m.creating = modeTitle, "", state.KindNote
+	case "a":
+		return m.openAgents()
 	case "A":
 		// The picker opens on tmux's answer rather than on the keystroke: the
 		// question is a subprocess, and a map that froze on it would freeze on
@@ -334,7 +343,7 @@ func (m Model) View() string {
 func (m Model) mapView() string {
 	switch {
 	case len(m.ws.Nodes) == 0:
-		return hintStyle.Render("The map is empty. Press n for a shell node, N for a note.")
+		return hintStyle.Render("The map is empty. Press n for a shell node, a for an agent, N for a note.")
 	case len(m.filtered()) == 0:
 		return hintStyle.Render("No card matches /" + flatten(m.filter) + ". Press esc to clear the filter.")
 	}
@@ -381,6 +390,11 @@ func (m Model) statusBar() string {
 		// find out (§5.2).
 		return m.bar(statusStyle, fmt.Sprintf("Delete workspace %s? Its sessions keep running. (y/n)",
 			flatten(m.candidates[m.choice])))
+	case m.mode == modeAgent:
+		return m.bar(statusStyle, fmt.Sprintf("Agent %s (%d of %d) · j/k choose · ⏎ start · esc cancel",
+			flatten(m.candidates[m.choice]), m.choice+1, len(m.candidates)))
+	case m.mode == modeAgentCmd:
+		return m.bar(statusStyle, "Agent command: "+flatten(m.input)+"▏")
 	case m.mode == modeAdopt:
 		return m.bar(statusStyle, fmt.Sprintf("Adopt %s (%d of %d) · j/k choose · ⏎ adopt · esc cancel",
 			flatten(m.candidates[m.choice]), m.choice+1, len(m.candidates)))
