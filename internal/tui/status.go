@@ -102,7 +102,7 @@ func (m Model) updateStatusMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 		// workspace arrived back at — rather than an agent asking for you while
 		// you watched. It sets the baseline silently, or the bell would ring on
 		// every Tab and on every start.
-		rings := m.polled && m.cfg.General.BellOnNeedsYou && arrivedNeedingYou(m.reports, msg.reports)
+		rings := m.polled && m.cfg.General.BellOnNeedsYou && arrivedNeedingYou(m.ws.Nodes, m.reports, msg.reports)
 		m.reports, m.polled = msg.reports, true
 		if rings {
 			return m, bell(), true
@@ -116,9 +116,16 @@ func (m Model) updateStatusMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 // bell is for the transition and not for the state: a needs-you report sitting
 // unanswered is read off the map, and ringing once a second until it is dealt
 // with would train the user to ignore the bell.
-func arrivedNeedingYou(was, now map[string]status.Report) bool {
-	for id, report := range now {
-		if report.State == status.NeedsYou && was[id].State != status.NeedsYou {
+//
+// Only the nodes on this map. The status directory holds every workspace's
+// reports, and a file can outlive the node it was written for — a workspace
+// deleted while its sessions kept running, a node killed mid-report. The bell
+// is a summons to a card, so a report with no card is not one to ring for:
+// `u` walks the map and could not jump to it.
+func arrivedNeedingYou(nodes []state.Node, was, now map[string]status.Report) bool {
+	for _, n := range nodes {
+		report, ok := now[n.ID]
+		if ok && report.State == status.NeedsYou && was[n.ID].State != status.NeedsYou {
 			return true
 		}
 	}

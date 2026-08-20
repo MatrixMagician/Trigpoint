@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/MatrixMagician/Trigpoint/internal/config"
+	"github.com/MatrixMagician/Trigpoint/internal/hooks"
 )
 
 // minTmux is the oldest tmux Trigpoint supports: control mode, `capture-pane -e`,
@@ -40,13 +41,14 @@ type Result struct {
 }
 
 // Run performs every check and returns the results in a fixed order.
-func Run(cfgPath, stateDir string) []Result {
+func Run(cfgPath, stateDir, claudeSettings string) []Result {
 	tmuxOK, tmuxResult := checkTmux()
 	return []Result{
 		tmuxResult,
 		checkControlMode(tmuxOK),
 		checkConfig(cfgPath),
 		checkStateDir(stateDir),
+		checkClaudeHooks(claudeSettings),
 	}
 }
 
@@ -156,6 +158,34 @@ func checkStateDir(dir string) Result {
 		return Result{Name: name, Detail: err.Error()}
 	}
 	return Result{Name: name, OK: true, Detail: dir}
+}
+
+// checkClaudeHooks reports whether the agent hooks are installed and whole.
+//
+// Not installed is not a failure: installation is explicit, and a user who
+// never runs a Claude Code node never needs it. Half installed is, because that
+// is a badge that has quietly stopped updating — which is the whole reason this
+// check exists rather than leaving drift to be noticed on the map.
+func checkClaudeHooks(path string) Result {
+	const name = "claude hooks"
+	const fix = "run `trig init-hooks claude`"
+
+	missing, err := hooks.Status(path)
+	if err != nil {
+		return Result{Name: name, Detail: err.Error()}
+	}
+	switch len(missing) {
+	case 0:
+		return Result{Name: name, OK: true, Detail: path}
+	case len(hooks.Entries):
+		return Result{Name: name, OK: true, Detail: "not installed; " + fix + " to have Claude Code nodes report their status"}
+	}
+	events := make([]string, len(missing))
+	for i, e := range missing {
+		events[i] = e.Event
+	}
+	return Result{Name: name, Detail: fmt.Sprintf("%d of %d entries missing from %s (%s); %s",
+		len(missing), len(hooks.Entries), path, strings.Join(events, ", "), fix)}
 }
 
 // checkWritable proves the directory can actually be written to, rather than

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MatrixMagician/Trigpoint/internal/hooks"
 	"github.com/MatrixMagician/Trigpoint/internal/status"
 )
 
@@ -67,7 +69,7 @@ func TestUnsafeWorkspaceNameIsRejectedBeforeAnythingIsWritten(t *testing.T) {
 }
 
 func TestHelpIsNotAnError(t *testing.T) {
-	for _, args := range [][]string{{"-h"}, {"doctor", "-h"}, {"emit-status", "-h"}} {
+	for _, args := range [][]string{{"-h"}, {"doctor", "-h"}, {"emit-status", "-h"}, {"init-hooks", "-h"}} {
 		cmd := exec.Command(build(t), args...)
 		cmd.Env = append(os.Environ(), "XDG_STATE_HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir())
 		out, err := cmd.CombinedOutput()
@@ -174,4 +176,176 @@ func withoutStatusFile(env []string) []string {
 		}
 	}
 	return kept
+}
+
+// `trig init-hooks claude` is the only place Trigpoint touches an agent's own
+// configuration. It merges, it says what it did, and it never does it twice.
+
+func TestInitHooksInstallsAndSaysWhatItChanged(t *testing.T) {
+	claudeDir := t.TempDir()
+	cmd := exec.Command(build(t), "init-hooks", "claude")
+	cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+claudeDir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("trig init-hooks claude failed: %v\n%s", err, out)
+	}
+
+	settings := filepath.Join(claudeDir, "settings.json")
+	if !strings.Contains(string(out), settings) {
+		t.Errorf("the output should name the file it changed:\n%s", out)
+	}
+	for _, e := range hooks.Entries {
+		if !strings.Contains(string(out), e.Event) {
+			t.Errorf("the output should name the %s entry it added:\n%s", e.Event, out)
+		}
+	}
+	missing, err := hooks.Status(settings)
+	if err != nil || len(missing) != 0 {
+		t.Errorf("after init-hooks, Status = %v, %v; want everything installed", missing, err)
+	}
+}
+
+func TestInitHooksASecondTimeSaysThereIsNothingToDo(t *testing.T) {
+	claudeDir := t.TempDir()
+	bin := build(t)
+	env := append(os.Environ(), "CLAUDE_CONFIG_DIR="+claudeDir)
+
+	first := exec.Command(bin, "init-hooks", "claude")
+	first.Env = env
+	if out, err := first.CombinedOutput(); err != nil {
+		t.Fatalf("first run failed: %v\n%s", err, out)
+	}
+	before, err := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second := exec.Command(bin, "init-hooks", "claude")
+	second.Env = env
+	out, err := second.CombinedOutput()
+	if err != nil {
+		t.Fatalf("second run failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "already") {
+		t.Errorf("the second run should say the hooks are already installed:\n%s", out)
+	}
+	after, err := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Errorf("the second run rewrote the file:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// Both orders of the flag and the agent name, because the usage line prints
+// `init-hooks claude [-n]` and flag stops parsing at the first non-flag word.
+func TestInitHooksDryRunSaysWhatItWouldDoAndWritesNothing(t *testing.T) {
+	for _, args := range [][]string{{"init-hooks", "-n", "claude"}, {"init-hooks", "claude", "-n"}} {
+		claudeDir := t.TempDir()
+		cmd := exec.Command(build(t), args...)
+		cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+claudeDir)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("trig %v failed: %v\n%s", args, err, out)
+		}
+		if !strings.Contains(string(out), "would") {
+			t.Errorf("trig %v should say it changed nothing:\n%s", args, out)
+		}
+		if _, err := os.Stat(filepath.Join(claudeDir, "settings.json")); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("trig %v wrote %s/settings.json", args, claudeDir)
+		}
+	}
+}
+
+func TestInitHooksRefusesAnUnknownAgentAndNamesTheKnownOnes(t *testing.T) {
+	for _, args := range [][]string{{"init-hooks"}, {"init-hooks", "codex"}, {"init-hooks", "claude", "extra"}} {
+		cmd := exec.Command(build(t), args...)
+		cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+t.TempDir())
+		out, err := cmd.CombinedOutput()
+
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			t.Fatalf("trig %v should exit non-zero, got %v\n%s", args, err, out)
+		}
+		if !strings.Contains(string(out), "claude") {
+			t.Errorf("trig %v should name the agents it knows:\n%s", args, out)
+		}
+	}
+}
+
+func TestDoctorReportsTheClaudeHooks(t *testing.T) {
+	cmd := exec.Command(build(t), "doctor")
+	cmd.Env = append(os.Environ(), "XDG_STATE_HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir(), "CLAUDE_CONFIG_DIR="+t.TempDir())
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("hooks that are not installed must not fail doctor: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "claude hooks") || !strings.Contains(string(out), "init-hooks") {
+		t.Errorf("doctor should report the hooks and how to install them:\n%s", out)
+	}
+}
+
+// The acceptance criterion end to end, minus Claude Code itself: install the
+// hooks, then run the commands that were installed the way Claude Code would —
+// with the node's TRIG_STATUS_FILE in the environment — and read the badges
+// back off disk through the same package the map view reads them with.
+func TestTheInstalledHooksReportEveryStateEndToEnd(t *testing.T) {
+	bin := build(t)
+	claudeDir := t.TempDir()
+	install := exec.Command(bin, "init-hooks", "claude")
+	install.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+claudeDir)
+	if out, err := install.CombinedOutput(); err != nil {
+		t.Fatalf("init-hooks failed: %v\n%s", err, out)
+	}
+
+	statusDir := t.TempDir()
+	nodeEnv := []string{
+		"PATH=" + filepath.Dir(bin),
+		"TRIG_STATUS_FILE=" + status.Path(statusDir, "main", "kt7m"),
+	}
+	for _, e := range hooks.Entries {
+		command := installedCommand(t, filepath.Join(claudeDir, "settings.json"), e.Event)
+		hook := exec.Command("sh", "-c", command)
+		hook.Env = nodeEnv
+		if out, err := hook.CombinedOutput(); err != nil {
+			t.Fatalf("the %s hook failed inside a node: %v\n%s", e.Event, err, out)
+		}
+
+		reports, err := status.Read(statusDir, "main")
+		if err != nil {
+			t.Fatalf("reading the status directory: %v", err)
+		}
+		if got := reports["kt7m"].State; got != e.State {
+			t.Errorf("after the %s hook the node reports %q, want %q", e.Event, got, e.State)
+		}
+	}
+}
+
+// installedCommand digs the command Claude Code would run for one event out of
+// the settings file, so the test above runs what was actually installed rather
+// than what this package thinks it installed.
+func installedCommand(t *testing.T, settingsPath, event string) string {
+	t.Helper()
+	raw, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Hooks map[string][]struct {
+			Hooks []struct{ Command string } `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		t.Fatalf("settings file is not JSON: %v\n%s", err, raw)
+	}
+	for _, group := range settings.Hooks[event] {
+		for _, entry := range group.Hooks {
+			if strings.Contains(entry.Command, "emit-status") {
+				return entry.Command
+			}
+		}
+	}
+	t.Fatalf("no emit-status command installed on %s:\n%s", event, raw)
+	return ""
 }

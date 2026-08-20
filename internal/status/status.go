@@ -157,14 +157,8 @@ func Read(dir, workspace string) (map[string]Report, error) {
 	reports := make(map[string]Report, len(entries))
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ext) || !strings.HasPrefix(name, prefix) {
-			continue
-		}
-		id := strings.TrimSuffix(strings.TrimPrefix(name, prefix), ext)
-		// Ids carry no underscore (state.NewNodeID), so anything left holding
-		// one is another workspace's file whose name happens to start with this
-		// workspace's — "main" against "main_thing_kt7m.json".
-		if id == "" || strings.Contains(id, "_") {
+		id := idIn(name, prefix)
+		if entry.IsDir() || id == "" {
 			continue
 		}
 		raw, err := os.ReadFile(filepath.Join(dir, name))
@@ -216,7 +210,7 @@ func RemoveWorkspace(dir, workspace string) error {
 	prefix := workspace + "_"
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ext) || !strings.HasPrefix(name, prefix) {
+		if entry.IsDir() || idIn(name, prefix) == "" {
 			continue
 		}
 		if err := Remove(filepath.Join(dir, name)); err != nil {
@@ -224,6 +218,28 @@ func RemoveWorkspace(dir, workspace string) error {
 		}
 	}
 	return nil
+}
+
+// idIn is the node id a file name carries for one workspace, or "" when the
+// file is not that workspace's at all.
+//
+// Ids carry no underscore (state.NewNodeID), so a name left holding one after
+// the prefix comes off belongs to another workspace whose name happens to start
+// with this one's — "main" against "main_thing_kt7m.json". Workspace names may
+// contain an underscore, so that is a real map and not a hypothetical one.
+//
+// Reading and removing both go through here. A removal that matched more names
+// than a read would take a live workspace's badges with it, and two copies of
+// this rule are two chances for exactly that to drift apart.
+func idIn(name, prefix string) string {
+	if !strings.HasSuffix(name, ext) || !strings.HasPrefix(name, prefix) {
+		return ""
+	}
+	id := strings.TrimSuffix(strings.TrimPrefix(name, prefix), ext)
+	if strings.Contains(id, "_") {
+		return ""
+	}
+	return id
 }
 
 // clean is what a detail has to survive to reach a status bar: no control

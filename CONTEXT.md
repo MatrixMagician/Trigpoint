@@ -200,6 +200,14 @@ _Avoid_: state, progress, activity
 The file an agent writes its status to. The stable contract between Trigpoint and any
 agent; hook plumbing is expected to change around it, the file format is not.
 
+**Hook**:
+An entry in an agent's own configuration that runs `trig emit-status` when the agent reaches
+a moment worth reporting. The plumbing on the far side of the status file, and the only part
+of Trigpoint that knows what an agent's configuration looks like. Installed by the user
+running `trig init-hooks`, never by creating a node; see
+[ADR 0016](docs/adr/0016-agent-hooks-are-installed-explicitly-and-merged.md).
+_Avoid_: integration, plugin, callback
+
 **Unread**:
 Output has arrived on a node since you last looked at it. A property of your attention, not
 of the node's work — it clears by looking, not by anything the node does.

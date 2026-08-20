@@ -13,6 +13,7 @@ import (
 
 	"github.com/MatrixMagician/Trigpoint/internal/config"
 	"github.com/MatrixMagician/Trigpoint/internal/doctor"
+	"github.com/MatrixMagician/Trigpoint/internal/hooks"
 	"github.com/MatrixMagician/Trigpoint/internal/state"
 	"github.com/MatrixMagician/Trigpoint/internal/status"
 	"github.com/MatrixMagician/Trigpoint/internal/tmux"
@@ -52,6 +53,8 @@ func run(args []string) error {
 			return runDoctor(args[1:])
 		case "emit-status":
 			return runEmitStatus(args[1:])
+		case "init-hooks":
+			return runInitHooks(args[1:])
 		}
 	}
 	return runTUI(args)
@@ -61,7 +64,7 @@ func runTUI(args []string) error {
 	fs := flag.NewFlagSet("trig", flag.ContinueOnError)
 	workspace := fs.String("w", "", "workspace to open (default: the configured default workspace)")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: trig [-w workspace]\n       trig doctor\n       trig emit-status <state> [detail...]\n\nflags:\n")
+		fmt.Fprintf(fs.Output(), "usage: trig [-w workspace]\n       trig doctor\n       trig emit-status <state> [detail...]\n       trig init-hooks claude\n\nflags:\n")
 		fs.PrintDefaults()
 	}
 	if helped, err := parse(fs, args); helped || err != nil {
@@ -110,8 +113,12 @@ func runDoctor(args []string) error {
 	if err != nil {
 		return err
 	}
+	claudeSettings, err := hooks.SettingsPath()
+	if err != nil {
+		return err
+	}
 
-	results := doctor.Run(cfgPath, stateDir)
+	results := doctor.Run(cfgPath, stateDir, claudeSettings)
 	fmt.Print(doctor.Format(results))
 	if !doctor.OK(results) {
 		return fmt.Errorf("doctor found problems; Trigpoint will not run correctly until they are fixed")
@@ -160,6 +167,74 @@ The words after the state are the detail, shown beside the badge on the map.
 		return errors.New("TRIG_STATUS_FILE is not set: agent status is reported from inside an agent node's session, where Trigpoint puts it")
 	}
 	return status.Write(path, state, strings.Join(fs.Args()[1:], " "))
+}
+
+// runInitHooks installs the plumbing that makes a Claude Code node report its
+// own status (SPEC §8). It is a command the user runs, never something node
+// creation does on their behalf: this writes to a file Trigpoint does not own,
+// and a tool that edits your agent's configuration without being asked is one
+// you stop trusting with it.
+func runInitHooks(args []string) error {
+	fs := flag.NewFlagSet("trig init-hooks", flag.ContinueOnError)
+	dryRun := fs.Bool("n", false, "print what would change and write nothing")
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), `usage: trig init-hooks claude [-n]
+
+Merges the hook entries that make a Claude Code node report its status into
+your Claude Code settings, leaving everything else in the file alone. Running
+it again changes nothing.
+
+flags:
+`)
+		fs.PrintDefaults()
+	}
+	// flag stops parsing at the first non-flag argument, so the agent name comes
+	// off the front before the flags are read. Without this, `init-hooks claude
+	// -n` — the form the usage line prints — takes -n as a second positional
+	// and is refused.
+	agent := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		agent, args = args[0], args[1:]
+	}
+	if helped, err := parse(fs, args); helped || err != nil {
+		return err
+	}
+	extra := fs.Args()
+	if agent == "" && len(extra) > 0 {
+		agent, extra = extra[0], extra[1:]
+	}
+	// One known agent so far. Every other agent integrates through the file
+	// format instead, which is the documented contract and needs no command.
+	if agent != "claude" || len(extra) > 0 {
+		fs.Usage()
+		return errors.New("say which agent's hooks to install; the one Trigpoint knows how to configure is claude")
+	}
+
+	path, err := hooks.SettingsPath()
+	if err != nil {
+		return err
+	}
+	added, err := hooks.Install(path, *dryRun)
+	if err != nil {
+		return err
+	}
+	if len(added) == 0 {
+		fmt.Printf("%s: the hooks are already installed; nothing to do\n", path)
+		return nil
+	}
+
+	verb := "added to"
+	if *dryRun {
+		verb = "would be added to"
+	}
+	fmt.Printf("%d %s %s:\n", len(added), verb, path)
+	for _, e := range added {
+		fmt.Printf("  %-17s %s\n      %s (%s)\n", e.Event, e.Command, e.State, e.Why)
+	}
+	if *dryRun {
+		fmt.Println("nothing was written; run without -n to install")
+	}
+	return nil
 }
 
 func statesList() string {
