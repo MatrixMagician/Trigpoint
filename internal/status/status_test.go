@@ -1,6 +1,8 @@
 package status
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -234,5 +236,34 @@ func TestRemoveTakesTheReportWithIt(t *testing.T) {
 	// Removing what is not there is the outcome that was asked for.
 	if err := Remove(path); err != nil {
 		t.Errorf("Remove of an absent report = %v, want nil", err)
+	}
+}
+
+// A workspace name may contain an underscore, so one workspace's file prefix
+// can be another workspace's whole name plus the start of a node id. Read
+// already refuses to read across that line; removal has to refuse in the same
+// place, or deleting a workspace silently clears a live workspace's badges.
+func TestRemovingAWorkspaceLeavesTheWorkspaceWhoseNameSharesItsPrefix(t *testing.T) {
+	dir := t.TempDir()
+	mine := Path(dir, "main", "kt7m")
+	theirs := Path(dir, "main_thing", "kt7m")
+	for _, path := range []string{mine, theirs} {
+		if err := Write(path, Running, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := RemoveWorkspace(dir, "main"); err != nil {
+		t.Fatalf("RemoveWorkspace: %v", err)
+	}
+	if _, err := os.Stat(mine); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("main's own report survived: %v", err)
+	}
+	if _, err := os.Stat(theirs); err != nil {
+		t.Errorf("deleting main took main_thing's report with it: %v", err)
+	}
+	reports, err := Read(dir, "main_thing")
+	if err != nil || len(reports) != 1 {
+		t.Errorf("main_thing reads %v, %v; want its report still there", reports, err)
 	}
 }

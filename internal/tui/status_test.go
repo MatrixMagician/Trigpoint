@@ -339,6 +339,36 @@ func TestTheBellIsSilentForWhatWasAlreadyOnDisk(t *testing.T) {
 	}
 }
 
+// A status file with no node on the map behind it is somebody else's leftover:
+// a workspace deleted while its sessions kept running, or a node killed while
+// its agent was still writing. The bell is a summons to a card, so a report with
+// no card must not ring it — `u` cannot jump to what is not on the map.
+func TestTheBellIsSilentForAReportWithNoNodeOnTheMap(t *testing.T) {
+	var rung strings.Builder
+	old := bellOut
+	bellOut = &rung
+	t.Cleanup(func() { bellOut = old })
+
+	cfg := config.Default()
+	cfg.General.BellOnNeedsYou = true
+	m, dir := statusModel(t, cfg)
+	m = ring(t, m) // the first pass, which is the map catching up
+
+	report(t, dir, "zzzz", status.NeedsYou, "nobody's node")
+	m = ring(t, m)
+	if rung.Len() != 0 {
+		t.Fatalf("the bell rang %q for a report with no node behind it", rung.String())
+	}
+
+	// And a report that does have a node still rings, so this is a filter and
+	// not the bell switched off.
+	report(t, dir, "kt7m", status.NeedsYou, "waiting")
+	ring(t, m)
+	if got := rung.String(); got != "\a" {
+		t.Errorf("the bell rang %q for a node on the map, want one \\a", got)
+	}
+}
+
 // ring is poll with the bell command actually run, which is what the runtime
 // would do with it.
 func ring(t *testing.T, m Model) Model {

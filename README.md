@@ -19,7 +19,7 @@ rest of the spec does not exist yet.
 | M1 | Nodes on a map — create/kill shell nodes, cursor and node movement, attach handoff | done |
 | M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | done |
 | M3 | Organisation — colours, tags, sizes, workspaces, groups, filter, palette | in progress (group movement to come) |
-| M4 | Agents — agent nodes, status badges, attention jump | in progress (`trig init-hooks claude` to come) |
+| M4 | Agents — agent nodes, status badges, attention jump, `trig init-hooks claude` | done |
 | M5 | Polish and release | to do |
 
 [`SPEC.md`](SPEC.md) is the whole design; this README describes only what is built.
@@ -47,8 +47,8 @@ Then check the machine can actually run it:
 trig doctor
 ```
 
-`doctor` reports on tmux, tmux control mode, the config file, and the state directory, and
-exits non-zero if any of them would stop Trigpoint working.
+`doctor` reports on tmux, tmux control mode, the config file, the state directory, and the
+Claude Code hooks, and exits non-zero if any of them would stop Trigpoint working.
 
 ## Usage
 
@@ -57,6 +57,7 @@ trig              # open the default workspace
 trig -w scratch   # open a named workspace
 trig doctor       # check this machine
 
+trig init-hooks claude                          # let Claude Code nodes report their status
 trig emit-status running "building the index"   # from inside an agent node
 ```
 
@@ -358,6 +359,29 @@ needing you. It rings on the transition and nothing else: not on every pass over
 has not changed, and not for what was already on disk when the map opened — so starting
 Trigpoint, or coming back to a workspace with `Tab`, is silent.
 
+### Claude Code
+
+```sh
+trig init-hooks claude
+```
+
+This merges three hook entries into `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR`): a
+node reports **running** when you give it something to do, **needs you** when it asks you
+something, and **done** when it finishes. It prints exactly what it added, `-n` shows what it
+would add without writing, and running it again changes nothing.
+
+It is a command you run, never something creating a node does on your behalf — the file
+belongs to Claude Code, and everything already in it is left alone, other people's hooks on
+the same events included. `trig doctor` reports whether the entries are installed and whole,
+so a badge that has quietly stopped updating is caught at diagnosis rather than on the map.
+
+The installed commands are guarded on `TRIG_STATUS_FILE`, so they are silent no-ops in Claude
+Code sessions running outside a node, and the needs-you entry stays quiet for Claude Code's
+idle-prompt notification — otherwise every finished node would turn amber a minute later.
+There is no hook for `error`: a hook that fires is a hook whose session is still working, so
+an agent reports that one itself. See
+[ADR 0016](docs/adr/0016-agent-hooks-are-installed-explicitly-and-merged.md).
+
 ### The contract, for any agent
 
 Every agent node is created with `TRIG_STATUS_FILE` in its session environment — a path in
@@ -435,6 +459,7 @@ once.
 | `~/.config/trig/config.toml` | Configuration |
 | `~/.local/state/trig/workspaces/<name>.json` | One workspace: its nodes, groups, and viewport |
 | `~/.local/state/trig/status/<workspace>_<node id>.json` | What one agent last said about itself |
+| `~/.claude/settings.json` | Claude Code's own settings; `trig init-hooks claude` merges three entries into it |
 
 `XDG_CONFIG_HOME` and `XDG_STATE_HOME` are honoured. Workspace writes are atomic, so a kill
 at any moment leaves either the old map or the new one, never a mixture.

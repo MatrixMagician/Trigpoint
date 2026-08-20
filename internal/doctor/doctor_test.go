@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/MatrixMagician/Trigpoint/internal/hooks"
 )
 
 var errExit = errors.New("exit status 1")
@@ -131,5 +133,56 @@ func TestFormatNamesTheFailingCheck(t *testing.T) {
 	out := Format([]Result{{Name: "tmux", OK: false, Detail: "tmux 3.1c is older than the required 3.2"}})
 	if !strings.Contains(out, "tmux") || !strings.Contains(out, "3.2") {
 		t.Errorf("a failure report must name the check and the problem, got:\n%s", out)
+	}
+}
+
+// The agent hooks are optional plumbing: a machine that has never run
+// `trig init-hooks claude` is a working machine, and doctor says so without
+// failing. What doctor is here to catch is drift — a half-installed set that a
+// badge would quietly stop updating on.
+
+func TestClaudeHooksNotInstalledIsNotAFailure(t *testing.T) {
+	r := checkClaudeHooks(filepath.Join(t.TempDir(), "settings.json"))
+	if !r.OK {
+		t.Errorf("a machine with no hooks installed should pass: %s", r.Detail)
+	}
+	if !strings.Contains(r.Detail, "init-hooks") {
+		t.Errorf("the detail should say how to install them, got %q", r.Detail)
+	}
+}
+
+func TestClaudeHooksFullyInstalledPasses(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if _, err := hooks.Install(path, false); err != nil {
+		t.Fatal(err)
+	}
+	if r := checkClaudeHooks(path); !r.OK {
+		t.Errorf("a full installation should pass, got %q", r.Detail)
+	}
+}
+
+func TestClaudeHooksPartiallyInstalledFailsAndNamesWhatIsMissing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	body := `{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "trig emit-status done"}]}]}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	r := checkClaudeHooks(path)
+	if r.OK {
+		t.Fatalf("a half-installed set is drift and should fail, got ok (%s)", r.Detail)
+	}
+	if !strings.Contains(r.Detail, "Notification") || !strings.Contains(r.Detail, "init-hooks") {
+		t.Errorf("the failure should name the missing events and the fix, got %q", r.Detail)
+	}
+}
+
+func TestClaudeHooksFailsOnAFileItCannotRead(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"hooks":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r := checkClaudeHooks(path); r.OK {
+		t.Errorf("unreadable settings should fail: %q", r.Detail)
 	}
 }
