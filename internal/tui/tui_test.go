@@ -138,17 +138,17 @@ func TestTheStatusBarIsAlwaysExactlyOneLine(t *testing.T) {
 		ws            state.Workspace
 		status        string
 		mode          mode
-		killing       string
+		killing       []string
 	}{
-		"a multi-line tmux error":          {80, 24, state.Workspace{Name: "main"}, "tmux: no server running\nand a second line", modeNormal, ""},
-		"an error wider than the terminal": {40, 10, state.Workspace{Name: "main"}, long, modeNormal, ""},
-		"a long title being typed":         {40, 10, state.Workspace{Name: "main"}, "", modeTitle, ""},
+		"a multi-line tmux error":          {80, 24, state.Workspace{Name: "main"}, "tmux: no server running\nand a second line", modeNormal, nil},
+		"an error wider than the terminal": {40, 10, state.Workspace{Name: "main"}, long, modeNormal, nil},
+		"a long title being typed":         {40, 10, state.Workspace{Name: "main"}, "", modeTitle, nil},
 		"a kill confirmation in a narrow terminal": {
 			20, 8,
 			state.Workspace{Name: "main", Nodes: []state.Node{{ID: "k4f2", Title: long}}},
-			"", modeConfirmKill, "k4f2",
+			"", modeConfirmKill, []string{"k4f2"},
 		},
-		"a workspace name wider than the terminal": {12, 6, state.Workspace{Name: "a-long-workspace-name"}, "", modeNormal, ""},
+		"a workspace name wider than the terminal": {12, 6, state.Workspace{Name: "a-long-workspace-name"}, "", modeNormal, nil},
 	}
 
 	for name, tc := range cases {

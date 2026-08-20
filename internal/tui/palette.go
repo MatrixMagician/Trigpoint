@@ -46,6 +46,7 @@ var commands = []command{
 	{label: "Cycle colour", hint: "c colour", keys: []string{"c"}},
 	{label: "Edit tags", hint: "t tags", keys: []string{"t"}},
 	{label: "Cycle card size", hint: "s size", keys: []string{"s"}},
+	{label: "Visual select", keys: []string{"v"}},
 	{label: "Next workspace", hint: "⇥ workspace", keys: []string{"tab"}},
 	{label: "Choose colour", keys: []string{"C"}},
 	{label: "Previous workspace", keys: []string{"shift+tab"}},

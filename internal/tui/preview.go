@@ -334,7 +334,8 @@ func (m Model) unpreviewed() []string {
 // forget drops what was being held on a node's behalf, on the way out. A
 // snapshot that outlived its node is one the next node to be handed that id
 // would show as its own: ids are only unique against the nodes on the map, so
-// they come back round.
+// they come back round — which is why a place in the selection (§7.3) is
+// dropped here too, and not only the previews.
 //
 // Fresh maps, for the reason markDirty builds one.
 func (m Model) forget(id string) Model {
@@ -347,7 +348,7 @@ func (m Model) forget(id string) Model {
 		}
 		m.previews = previews
 	}
-	m = m.alive(id).read(id)
+	m = m.alive(id).read(id).pruneSelection()
 	if m.dirty[id] {
 		dirty := make(map[string]bool, len(m.dirty))
 		for other := range m.dirty {

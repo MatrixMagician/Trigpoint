@@ -36,6 +36,14 @@ cell under the cursor is something left behind (a killed node, a fresh map), not
 you steer to.
 _Avoid_: selection (for the cursor itself), focus, pointer
 
+**Selection**:
+The nodes an action applies to: the one under the cursor, or the several `v` has gathered.
+Not a mode — a non-empty selection *is* visual select, and every key goes on meaning what it
+meant with more than one node to mean it about. It is never persisted and never crosses a
+workspace; see
+[ADR 0011](docs/adr/0011-visual-select-is-a-selection-not-a-mode.md).
+_Avoid_: multi-select, marks, highlighted nodes, visual mode
+
 **Viewport**:
 The window of cells the map view is currently showing. It follows the cursor and is
 remembered with the workspace, so reopening Trigpoint puts you back where you were looking.

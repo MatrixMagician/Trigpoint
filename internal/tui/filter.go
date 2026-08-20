@@ -61,7 +61,7 @@ func (m Model) clearFilter() (tea.Model, tea.Cmd) {
 // refilter settles the map on a filter that has just changed: the cursor onto a
 // card that is still there, and a capture for the cards that have come back.
 func (m Model) refilter(before string) (Model, tea.Cmd) {
-	m = m.snapToMatch()
+	m = m.snapToMatch().pruneSelection()
 	// The cards on screen with nothing on them — and, when the filter has
 	// widened, every card on screen: hidden is off screen, and off screen is
 	// where activity events are dropped, so a card that was hidden has been

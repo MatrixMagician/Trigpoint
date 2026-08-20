@@ -71,7 +71,7 @@ What is bound today:
 | --- | --- |
 | `h j k l` / arrows | Move the cursor to the nearest node in that direction |
 | `3l`, `12j`, … | Count prefix — repeat the motion |
-| `H J K L` | Move the selected node one cell, shoving whatever is in the way |
+| `H J K L` | Move the selection one cell — the node under the cursor, or every node `v` has gathered — shoving whatever is in the way |
 | `zz` | Centre the viewport on the cursor |
 | `0` | Jump to the origin |
 | `Enter` | Attach to the node under the cursor — the whole terminal, handed over. On a dead node, offer to respawn it. On a note, edit its body in `$EDITOR` |
@@ -80,10 +80,11 @@ What is bound today:
 | `N` | New note — a rendered markdown card with no session behind it |
 | `r` | Rename the node under the cursor |
 | `c` | Cycle its accent colour · `C` pick one by name — `j`/`k` to choose, `Enter` to set |
-| `t` | Edit its tags — space-separated, several to a node |
+| `t` | Edit its tags — space-separated, several to a node. With a selection gathered, `tag` adds to every selected node and `-tag` removes |
 | `s` | Cycle its card size, small → medium → large |
 | `A` | Adopt a tmux session Trigpoint did not create — `j`/`k` to choose, `Enter` to adopt |
-| `x` | Kill the node under the cursor and its session (asks first; a note or a dead node is just removed) |
+| `x` | Kill the node under the cursor and its session (asks first; a note or a dead node is just removed). With a selection gathered, one confirmation names the count and kills all of them |
+| `v` | Visual select — gather the node under the cursor, or let go of one already gathered. The motion keys then extend the selection, and `H J K L`, `t`, and `x` act on all of it at once; `Esc` clears it |
 | `Tab` / `Shift-Tab` | Next / previous workspace, in name order |
 | `w` | Workspace picker — `j`/`k` to choose, `Enter` to open, `n` new, `x` delete |
 | `/` | Filter the map — narrows as you type, `Enter` keeps it, `Esc` clears it |

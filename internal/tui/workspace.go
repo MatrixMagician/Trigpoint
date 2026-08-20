@@ -108,6 +108,9 @@ func (m Model) open(name string) (Model, tea.Cmd) {
 	// and carrying it over would narrow a map nobody filtered — and could hide
 	// the very card the cursor arrives from the file on (§7.1).
 	m.filter = ""
+	// So does the selection, for the same reason the previews do: an id is only
+	// unique against the map it belongs to.
+	m.selection = nil
 	// The pending nodes belong to the map that asked for them, so they are
 	// dropped too — and a create that lands afterwards is dropped with them,
 	// because nothing on this map is waiting for it.

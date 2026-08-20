@@ -157,35 +157,47 @@ func (m Model) updateConfirmKill(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
 		m.mode = modeNormal
-		id := m.killing
-		m.killing = ""
-		node, ok := m.node(id)
-		if !ok {
-			return m, nil
+		ids := m.killing
+		m.killing = nil
+		// One confirmation, one kill per node: a bulk kill is the same operation
+		// several times over, and each node's own answer from tmux comes back on
+		// its own message.
+		removed := false
+		var kills []tea.Cmd
+		for _, id := range ids {
+			node, ok := m.node(id)
+			if !ok {
+				continue
+			}
+			if !node.HasSession() {
+				// Removing the node is the whole operation — there is no session
+				// behind it to ask tmux about, let alone kill.
+				//
+				// A node the map believes dead is deliberately not short-circuited
+				// here. Kill already treats an absent session as the outcome that
+				// was asked for, so routing every card through it costs a no-op
+				// subprocess — and skipping it on a dead flag that turned out to be
+				// wrong would abandon a live session with no card left to find it
+				// by.
+				m.ws.Nodes = without(m.ws.Nodes, id)
+				m, removed = m.forget(id), true
+				continue
+			}
+			// An adopted node kills the foreign session it was adopted from: the
+			// card is over a real session, and the confirmation it took to get here
+			// is the same one every other node's kill takes (§9.3).
+			sessions, session, stamp := m.sessions, m.sessionOf(node), m.stamp()
+			kills = append(kills, func() tea.Msg {
+				err := sessions.Kill(session)
+				return nodeKilledMsg{mapStamp: stamp, id: id, err: err}
+			})
 		}
-		if !node.HasSession() {
-			// Removing the node is the whole operation — there is no session
-			// behind it to ask tmux about, let alone kill.
-			//
-			// A node the map believes dead is deliberately not short-circuited
-			// here. Kill already treats an absent session as the outcome that
-			// was asked for, so routing every card through it costs a no-op
-			// subprocess — and skipping it on a dead flag that turned out to be
-			// wrong would abandon a live session with no card left to find it
-			// by.
-			m.ws.Nodes = without(m.ws.Nodes, id)
-			return m.forget(id).save(), nil
+		if removed {
+			m = m.save()
 		}
-		// An adopted node kills the foreign session it was adopted from: the
-		// card is over a real session, and the confirmation it took to get here
-		// is the same one every other node's kill takes (§9.3).
-		sessions, session, stamp := m.sessions, m.sessionOf(node), m.stamp()
-		return m, func() tea.Msg {
-			err := sessions.Kill(session)
-			return nodeKilledMsg{mapStamp: stamp, id: id, err: err}
-		}
+		return m, tea.Batch(kills...)
 	case "n", "N", "esc", "q":
-		m.mode, m.killing = modeNormal, ""
+		m.mode, m.killing = modeNormal, nil
 	}
 	return m, nil
 }
@@ -309,9 +321,19 @@ func without(nodes []state.Node, id string) []state.Node {
 // copied by value all over Bubble Tea, and editing in place would change the
 // map every older copy is still holding.
 func (m Model) withNode(id string, edit func(*state.Node)) Model {
+	return m.withNodes([]string{id}, edit)
+}
+
+// withNodes is the same for several at once, in one pass and one fresh slice —
+// which is what a bulk edit over a selection needs (§7.3).
+func (m Model) withNodes(ids []string, edit func(*state.Node)) Model {
+	wanted := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		wanted[id] = true
+	}
 	nodes := append([]state.Node(nil), m.ws.Nodes...)
 	for i := range nodes {
-		if nodes[i].ID == id {
+		if wanted[nodes[i].ID] {
 			edit(&nodes[i])
 		}
 	}
@@ -452,7 +474,8 @@ func (m Model) cards() string {
 			node, ok := at[cell]
 			drawn := []string(nil)
 			if ok {
-				drawn = card(m.shown(node), m.drawnSelected(node), m.dead[node.ID], m.unread[node.ID], body, m.bodyOf(node))
+				drawn = card(m.shown(node), m.drawnSelected(node), m.isSelected(node.ID),
+					m.dead[node.ID], m.unread[node.ID], body, m.bodyOf(node))
 			}
 			for i := range lines {
 				if col > minCell.Col {
@@ -518,15 +541,21 @@ func (m Model) bodyOf(n state.Node) []string {
 // card is a node's rendering on the map: a border carrying its title, the body
 // lines beneath it, and a border carrying its kind and age. Cards are never
 // persisted; nodes are.
-func card(n state.Node, selected, dead, unread bool, body int, content []string) []string {
+func card(n state.Node, cursor, inSelection, dead, unread bool, body int, content []string) []string {
 	style := cardStyle
 	accented, hasAccent := accent(n.Colour)
 	switch {
-	case selected:
-		// Selection outranks both the accent and the dimming: a cursor you
+	case cursor && inSelection:
+		// Inside a selection the cursor wears the selection's colour and is
+		// marked within it, rather than outranking it: see selectionCursorStyle.
+		style = selectionCursorStyle
+	case cursor:
+		// The cursor outranks both the accent and the dimming: a cursor you
 		// cannot find is worse than a card drawn in the wrong colour, and the
 		// badge still says dead.
 		style = selectedStyle
+	case inSelection:
+		style = selectionStyle
 	case dead:
 		style = deadStyle
 	case hasAccent:

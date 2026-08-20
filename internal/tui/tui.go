@@ -34,6 +34,7 @@ const (
 	modePeek
 	modeRename
 	modeTags
+	modeBulkTags
 	modeColour
 	modeWorkspace
 	modeNewWorkspace
@@ -55,11 +56,15 @@ type Model struct {
 	input         string
 	status        string       // the last failure, shown until the next action
 	pending       []state.Node // nodes whose sessions tmux has not confirmed yet
-	killing       string       // the node x was pressed on, held until y or n
+	killing       []string     // the nodes x was pressed on, held until y or n
 	respawning    string       // the dead node Enter was pressed on, held until y or n
 	creating      state.Kind   // the kind the title prompt is collecting a name for
 	editing       string       // the node an attribute prompt was opened on
 	count         string       // the count prefix typed so far, applied to the next motion
+	// selection is the nodes v has gathered (§7.3), by id, in the order they
+	// were gathered. Empty is the map's ordinary state: the node under the
+	// cursor is then the selection, and every bulk action falls back to it.
+	selection []string
 	// filter narrows the map to the cards matching it (§7.1). It outlives the
 	// prompt that collects it — a filter is how the map is being looked at, and
 	// Esc is the only thing that clears it.
@@ -164,6 +169,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateRename(msg)
 		case modeTags:
 			return m.updateTags(msg)
+		case modeBulkTags:
+			return m.updateBulkTags(msg)
 		case modeColour:
 			return m.updateColour(msg)
 		case modeWorkspace:
@@ -235,7 +242,12 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		return m.editAttr(modeRename, func(n state.Node) string { return n.Title })
 	case "t":
+		if len(m.selection) > 0 {
+			return m.openBulkTags()
+		}
 		return m.editAttr(modeTags, func(n state.Node) string { return strings.Join(n.Tags, " ") })
+	case "v":
+		return m.toggleSelect()
 	case "c":
 		return m.cycleColour()
 	case "C":
@@ -253,15 +265,18 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+k", ":":
 		return m.openPalette()
 	case "esc":
-		// The one thing Esc does on the map: a filter is the only state the map
-		// itself can be left in.
+		// Esc has two things to clear and one key. The selection goes first: it
+		// is the newer of the two, and the filter is still there to Esc again.
+		if next, cleared := m.clearSelection(); cleared {
+			return next, nil
+		}
 		return m.clearFilter()
 	case "x":
-		// The target is fixed here rather than read again at y, because a
+		// The targets are fixed here rather than read again at y, because a
 		// create landing while the prompt is up moves the cursor onto the new
 		// node — and the user would then confirm one kill and get another.
-		if node, ok := m.selected(); ok {
-			m.mode, m.killing = modeConfirmKill, node.ID
+		if ids := m.targets(); len(ids) > 0 {
+			m.mode, m.killing = modeConfirmKill, ids
 		}
 	}
 	return m, nil
@@ -326,6 +341,11 @@ func (m Model) statusBar() string {
 		return m.bar(statusStyle, "Rename: "+flatten(m.input)+"▏")
 	case m.mode == modeTags:
 		return m.bar(statusStyle, "Tags: "+flatten(m.input)+"▏")
+	case m.mode == modeBulkTags:
+		// The prompt says which way round the two verbs are, because a bulk
+		// edit that silently set the tags instead would be unrecoverable.
+		return m.bar(statusStyle, fmt.Sprintf("Tags on %s (tag adds, -tag removes): %s▏",
+			pluralise(len(m.targets()), "node"), flatten(m.input)))
 	case m.mode == modeColour:
 		return m.bar(statusStyle, m.colourBar())
 	case m.mode == modeWorkspace:
@@ -344,9 +364,15 @@ func (m Model) statusBar() string {
 	case m.mode == modeConfirmRespawn:
 		node, _ := m.node(m.respawning)
 		return m.bar(statusStyle, fmt.Sprintf("Respawn %s? (y/n)", flatten(node.Title)))
+	case m.mode == modeConfirmKill && len(m.killing) != 1:
+		// One confirmation for the whole selection, naming how many nodes it
+		// will take (§7.3). What is behind each of them is not spelled out:
+		// a selection can hold notes, dead nodes, and live sessions at once,
+		// and the count is the thing the user is being asked about.
+		return m.bar(statusStyle, fmt.Sprintf("Kill %s? (y/n)", pluralise(len(m.killing), "node")))
 	case m.mode == modeConfirmKill:
-		node, _ := m.node(m.killing)
-		if !node.HasSession() || m.dead[m.killing] {
+		node, _ := m.node(m.killing[0])
+		if !node.HasSession() || m.dead[m.killing[0]] {
 			// There is no session behind a note, and a dead node's is already
 			// gone, so offering to kill one would be asking the user to
 			// confirm something that cannot happen.
@@ -364,6 +390,9 @@ func (m Model) statusBar() string {
 		left = fmt.Sprintf("%s · %d of %s · /%s",
 			m.ws.Name, len(m.filtered()), pluralise(len(m.ws.Nodes), "node"), flatten(m.filter))
 	}
+	if len(m.selection) > 0 {
+		left += fmt.Sprintf(" · %d selected", len(m.selection))
+	}
 	// The count prefix is what the next keystroke will do, so it is offered
 	// before any hint about which keystroke that might be.
 	prefix := ""
@@ -372,7 +401,11 @@ func (m Model) statusBar() string {
 	}
 	// TrimSuffix for the terminal with room for the count and not one hint: a
 	// separator with nothing after it reads as something that failed to render.
-	right := strings.TrimSuffix(prefix+fitHints(m.width-lipgloss.Width(left)-lipgloss.Width(prefix)-barPadding-1), " · ")
+	hints := selectionHints
+	if len(m.selection) == 0 {
+		hints = fitHints(m.width - lipgloss.Width(left) - lipgloss.Width(prefix) - barPadding - 1)
+	}
+	right := strings.TrimSuffix(prefix+hints, " · ")
 
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - barPadding
 	if gap < 1 {
