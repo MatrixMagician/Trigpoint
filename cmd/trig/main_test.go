@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/MatrixMagician/Trigpoint/internal/status"
 )
 
 // build compiles trig once and returns the binary's path, so the tests below
@@ -65,7 +67,7 @@ func TestUnsafeWorkspaceNameIsRejectedBeforeAnythingIsWritten(t *testing.T) {
 }
 
 func TestHelpIsNotAnError(t *testing.T) {
-	for _, args := range [][]string{{"-h"}, {"doctor", "-h"}} {
+	for _, args := range [][]string{{"-h"}, {"doctor", "-h"}, {"emit-status", "-h"}} {
 		cmd := exec.Command(build(t), args...)
 		cmd.Env = append(os.Environ(), "XDG_STATE_HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir())
 		out, err := cmd.CombinedOutput()
@@ -94,4 +96,82 @@ func TestUnknownFlagIsReportedOnce(t *testing.T) {
 	if n := strings.Count(string(out), "not defined"); n != 1 {
 		t.Errorf("the error should appear once, appeared %d times:\n%s", n, out)
 	}
+}
+
+// `trig emit-status` is the agent side of SPEC §8: the tiny CLI mode an agent's
+// hooks call, and the thing a user can run by hand from inside a node to see a
+// badge move. It is a convenience over the file format and never a privileged
+// path into Trigpoint — these tests read what it wrote back through the same
+// package the map view reads it with.
+
+func TestEmitStatusWritesAReportToTheStatusFile(t *testing.T) {
+	dir := t.TempDir()
+	path := status.Path(dir, "main", "kt7m")
+
+	cmd := exec.Command(build(t), "emit-status", "needs_you", "waiting", "for", "approval")
+	cmd.Env = append(os.Environ(), "TRIG_STATUS_FILE="+path)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("trig emit-status failed: %v\n%s", err, out)
+	}
+
+	reports, err := status.Read(dir, "main")
+	if err != nil {
+		t.Fatalf("reading back the report: %v", err)
+	}
+	got, ok := reports["kt7m"]
+	if !ok {
+		t.Fatalf("read %v, want a report for kt7m", reports)
+	}
+	if got.State != status.NeedsYou {
+		t.Errorf("state = %q, want %q", got.State, status.NeedsYou)
+	}
+	if got.Detail != "waiting for approval" {
+		t.Errorf("detail = %q, want the words after the state", got.Detail)
+	}
+}
+
+// A hook that fires outside a node has no status file to write to, and saying
+// which variable is missing is the whole of what makes that fixable.
+func TestEmitStatusWithoutAStatusFileSaysWhichVariableIsMissing(t *testing.T) {
+	cmd := exec.Command(build(t), "emit-status", "running")
+	cmd.Env = withoutStatusFile(os.Environ())
+	out, err := cmd.CombinedOutput()
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("emit-status with no status file should exit non-zero, got %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "TRIG_STATUS_FILE") {
+		t.Errorf("the failure should name the variable:\n%s", out)
+	}
+}
+
+// A typo is refused where it is made rather than written to a file every later
+// reader silently skips.
+func TestEmitStatusRefusesAStateOutsideTheVocabulary(t *testing.T) {
+	path := status.Path(t.TempDir(), "main", "kt7m")
+	cmd := exec.Command(build(t), "emit-status", "needs-you")
+	cmd.Env = append(os.Environ(), "TRIG_STATUS_FILE="+path)
+	out, err := cmd.CombinedOutput()
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("an unknown state should exit non-zero, got %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "needs_you") {
+		t.Errorf("the failure should list the states an agent may report:\n%s", out)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a refused state should write nothing, but %s exists", path)
+	}
+}
+
+func withoutStatusFile(env []string) []string {
+	kept := make([]string, 0, len(env))
+	for _, v := range env {
+		if !strings.HasPrefix(v, "TRIG_STATUS_FILE=") {
+			kept = append(kept, v)
+		}
+	}
+	return kept
 }

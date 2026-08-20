@@ -12,6 +12,7 @@ import (
 
 	"github.com/MatrixMagician/Trigpoint/internal/config"
 	"github.com/MatrixMagician/Trigpoint/internal/state"
+	"github.com/MatrixMagician/Trigpoint/internal/status"
 )
 
 var (
@@ -52,7 +53,12 @@ type Model struct {
 	cfg      config.Config
 	ws       state.Workspace
 	stateDir string
-	sessions Sessions
+	// statusDir is where agent nodes report what they are doing (§8). It sits
+	// beside the workspace files, and is empty on a map that was given no state
+	// directory — which watches nothing rather than watching the working
+	// directory.
+	statusDir string
+	sessions  Sessions
 
 	width, height int
 	mode          mode
@@ -110,6 +116,15 @@ type Model struct {
 	// and it is never persisted — a mark that survived a restart would be one
 	// nothing had learned anything about.
 	unread map[string]bool
+	// reports is what each agent last said about itself, by node id (§8). Read
+	// off disk on a tick and never persisted, for the same reason liveness is
+	// not: a state that survived a reboot would be a claim about a process that
+	// did not.
+	reports map[string]status.Report
+	// polled is whether the status directory has been read since this map was
+	// opened. The first read is the map catching up with what was already
+	// there, which is not a transition anything should be rung about.
+	polled bool
 }
 
 func New(cfg config.Config, ws state.Workspace, stateDir string, sessions Sessions) Model {
@@ -118,7 +133,7 @@ func New(cfg config.Config, ws state.Workspace, stateDir string, sessions Sessio
 	// to be put before Bubble Tea owns the terminal, or the answer comes back
 	// as keystrokes on a screen already being painted.
 	noteMarkdown()
-	return Model{cfg: cfg, ws: ws, stateDir: stateDir, sessions: sessions}
+	return Model{cfg: cfg, ws: ws, stateDir: stateDir, statusDir: status.DirBeside(stateDir), sessions: sessions}
 }
 
 // Init starts the two things that keep previews current: the control-mode
@@ -132,7 +147,10 @@ func (m Model) Init() tea.Cmd {
 	// Reconciliation is third because the map opens on what the last session
 	// left behind, and a card claiming a session that did not survive the
 	// reboot is the one lie a map like this must not tell (§9.2).
-	return tea.Batch(listen(m.sessions.Watch(context.Background())), m.slowTick(), m.reconcile())
+	// The status poll is its own tick: an agent reports on its own schedule,
+	// and a badge a human is waiting on should not be held up behind a refresh
+	// that exists to re-read tmux (§8).
+	return tea.Batch(listen(m.sessions.Watch(context.Background())), m.slowTick(), m.statusTick(), m.reconcile())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -143,6 +161,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	}
 	if next, cmd, handled := m.updatePeekMsg(msg); handled {
+		return next, cmd
+	}
+	if next, cmd, handled := m.updateStatusMsg(msg); handled {
 		return next, cmd
 	}
 	switch msg := msg.(type) {
@@ -264,6 +285,8 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Peek: the node's output, read without being given the keyboard
 		// (§7.3).
 		return m.peek()
+	case "u":
+		return m.jumpAttention()
 	case "r":
 		return m.editAttr(modeRename, func(n state.Node) string { return n.Title })
 	case "t":
@@ -433,6 +456,12 @@ func (m Model) statusBar() string {
 	}
 	if len(m.selection) > 0 {
 		left += fmt.Sprintf(" · %d selected", len(m.selection))
+	}
+	// What the agent under the cursor last said about itself. The badge is a
+	// colour; this is the same report in words, and the only place the detail
+	// an agent reported is ever shown.
+	if label := m.statusLabel(); label != "" {
+		left += " · " + flatten(label)
 	}
 	// The count prefix is what the next keystroke will do, so it is offered
 	// before any hint about which keystroke that might be.

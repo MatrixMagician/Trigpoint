@@ -9,8 +9,9 @@ and the attachment. Quitting Trigpoint kills nothing — every session outlives 
 ## Status
 
 Early. The map, its cursor, shell nodes, note cards, the attach handoff, live previews, peek,
-adopting sessions you already had, the four card attributes — name, colour, tags, size — and
-several workspaces to switch between work; the rest of the spec does not exist yet.
+adopting sessions you already had, the four card attributes — name, colour, tags, size —
+several workspaces to switch between, and agent nodes reporting their own status work; the
+rest of the spec does not exist yet.
 
 | Milestone | | |
 | --- | --- | --- |
@@ -18,7 +19,7 @@ several workspaces to switch between work; the rest of the spec does not exist y
 | M1 | Nodes on a map — create/kill shell nodes, cursor and node movement, attach handoff | done |
 | M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | done |
 | M3 | Organisation — colours, tags, sizes, workspaces, groups, filter, palette | in progress (group movement to come) |
-| M4 | Agents — agent nodes, status badges, attention jump | to do |
+| M4 | Agents — agent nodes, status badges, attention jump | in progress (`trig init-hooks claude` to come) |
 | M5 | Polish and release | to do |
 
 [`SPEC.md`](SPEC.md) is the whole design; this README describes only what is built.
@@ -55,6 +56,8 @@ exits non-zero if any of them would stop Trigpoint working.
 trig              # open the default workspace
 trig -w scratch   # open a named workspace
 trig doctor       # check this machine
+
+trig emit-status running "building the index"   # from inside an agent node
 ```
 
 A workspace is an independent map with its own nodes and its own default working directory.
@@ -91,6 +94,7 @@ What is bound today:
 | `Tab` / `Shift-Tab` | Next / previous workspace, in name order |
 | `w` | Workspace picker — `j`/`k` to choose, `Enter` to open, `n` new, `x` delete |
 | `/` | Filter the map — narrows as you type, `Enter` keeps it, `Esc` clears it |
+| `u` | Jump to the next node needing attention — every agent reporting NEEDS YOU first, then every unread card, in map order. Press it again for the one after |
 | `Ctrl-K` / `:` | Palette — every command, every node on every map, every workspace, every session to adopt |
 | `q` / `Ctrl-C` | Quit — sessions keep running |
 
@@ -328,6 +332,66 @@ Measured on tmux 3.7b: one capture costs ~1.3 ms, and a viewport of 40 nodes ~55
 whole batch, near enough regardless of preview length — the cost is running `tmux`, not the
 lines it hands back.
 
+## Agent status
+
+An agent node's card is badged with what the agent says it is doing. Trigpoint never reads an
+agent's output to work it out: agents announce, Trigpoint draws.
+
+| Badge | |
+| --- | --- |
+| `●` green | running |
+| `●` amber | **needs you** — a question, a permission prompt, something only you can answer |
+| `●` grey | done |
+| `●` red | error |
+| `●?` | the report is older than `status_stale_after_min` — displayed as old, never resolved into a guess |
+| `○` | unread output, in whatever colour the agent last reported |
+| `✗` | the session is gone |
+
+The three sources compose into one mark: the dot's shape is unread, its colour is agent
+status, and a session that has died outranks both. An agent that has never reported has no
+colour at all — absence of a report is not a state, and Trigpoint says nothing rather than
+inferring one.
+
+`u` walks the cards that want you: everything reporting needs-you first, then everything
+unread. Set `bell_on_needs_you = true` to have the terminal bell ring when an agent starts
+needing you. It rings on the transition and nothing else: not on every pass over a report that
+has not changed, and not for what was already on disk when the map opened — so starting
+Trigpoint, or coming back to a workspace with `Tab`, is silent.
+
+### The contract, for any agent
+
+Every agent node is created with `TRIG_STATUS_FILE` in its session environment — a path in
+`~/.local/state/trig/status/`. Write this JSON to that path and the badge follows within a
+second:
+
+```json
+{"state": "needs_you", "ts": "2026-08-20T11:04:05Z", "detail": "may I run rm -rf build?"}
+```
+
+`state` is one of `running`, `needs_you`, `done`, `error`, and nothing else. `ts` is when the
+agent said it, which is what staleness is measured against; `detail` is optional and is shown
+in the status bar beside the card under the cursor. Write it atomically — a temp file and a
+rename — because Trigpoint reads the directory while agents are writing to it.
+
+`trig emit-status <state> [detail...]` does all of that for you, and is what an agent's hooks
+should call:
+
+```sh
+trig emit-status needs_you "may I run rm -rf build?"
+trig emit-status done
+```
+
+It reads `TRIG_STATUS_FILE` from the environment, so it works from inside an agent node and
+nowhere else — try it by hand in one and watch the badge change. It is a convenience over the
+file format and never a privileged path: an agent that writes the JSON itself is exactly as
+integrated as one that shells out.
+
+The file format is the stable part of this. Hook plumbing changes with every agent release;
+`{state, ts, detail}` does not. See
+[ADR 0015](docs/adr/0015-agent-status-is-a-directory-of-files-trigpoint-polls.md) for why the
+directory is polled rather than watched, and why the file is named after the workspace as
+well as the node.
+
 ## Configuration
 
 `~/.config/trig/config.toml`, or `$XDG_CONFIG_HOME/trig/config.toml`. It is optional — the
@@ -341,7 +405,8 @@ confirm_quit = false          # ask before quitting
 detach_key = "M-Escape"       # single keystroke back to the map from an attached node
 preview_debounce_ms = 500
 refresh_tick_s = 5
-status_stale_after_min = 10
+status_stale_after_min = 10   # a running report older than this is badged as stale
+bell_on_needs_you = false     # ring the terminal when an agent starts needing you
 
 [general.preview_lines]       # preview lines per card size
 s = 0
@@ -359,9 +424,9 @@ The `agents` tables are the presets, not additions to them: a file that names an
 `claude` and `codex` entirely, so a preset for an agent you do not have installed can be got
 rid of. A file with no `agents` table keeps both defaults.
 
-`preview_debounce_ms`, `refresh_tick_s`, `preview_lines`, and the `agents` presets are live;
-a node that has never been sized takes the `m` line count. Settings whose features have not
-landed yet (agent status) are read and stored, but nothing consumes them.
+Every setting above is live; a node that has never been sized takes the `m` line count. A
+`status_stale_after_min` of `0` turns the stale mark off rather than staling everything at
+once.
 
 ## Files
 
@@ -369,6 +434,7 @@ landed yet (agent status) are read and stored, but nothing consumes them.
 | --- | --- |
 | `~/.config/trig/config.toml` | Configuration |
 | `~/.local/state/trig/workspaces/<name>.json` | One workspace: its nodes, groups, and viewport |
+| `~/.local/state/trig/status/<workspace>_<node id>.json` | What one agent last said about itself |
 
 `XDG_CONFIG_HOME` and `XDG_STATE_HOME` are honoured. Workspace writes are atomic, so a kill
 at any moment leaves either the old map or the new one, never a mixture.

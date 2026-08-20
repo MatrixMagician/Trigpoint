@@ -29,6 +29,10 @@ type General struct {
 	RefreshTickS        int          `toml:"refresh_tick_s"`
 	StatusStaleAfterMin int          `toml:"status_stale_after_min"`
 	ConfirmQuit         bool         `toml:"confirm_quit"`
+	// BellOnNeedsYou rings the terminal when an agent starts needing you (§8).
+	// Off unless asked for: a map is a thing you glance at, and a tool that
+	// beeps without being asked is one that gets muted.
+	BellOnNeedsYou bool `toml:"bell_on_needs_you"`
 	// DetachKey is the binding Trigpoint installs into tmux so that a single
 	// keystroke returns from an attached node to the map.
 	DetachKey string `toml:"detach_key"`
@@ -56,6 +60,7 @@ func Default() Config {
 			RefreshTickS:        5,
 			StatusStaleAfterMin: 10,
 			ConfirmQuit:         false,
+			BellOnNeedsYou:      false,
 			DetachKey:           "M-Escape",
 		},
 		Agents: map[string]Agent{
