@@ -260,7 +260,7 @@ func (m Model) nodeEntries(name string) []entry {
 	entries := make([]entry, 0, len(ws.Nodes))
 	for _, n := range ws.Nodes {
 		workspace, id := name, n.ID
-		detail := name + " · " + kindLabel(n.Kind)
+		detail := name + " · " + n.Kind.Label()
 		if tags := tagLabel(n.Tags); tags != "" {
 			detail += " · " + tags
 		}
@@ -315,9 +315,9 @@ func (m Model) paletteMatches() []entry {
 	}
 	kept := make([]scored, 0, len(m.palette))
 	for _, e := range m.palette {
-		score := fuzzy(m.input, e.label)
+		score := state.Fuzzy(m.input, e.label)
 		if score < 0 {
-			if inDetail := fuzzy(m.input, e.detail); inDetail >= 0 {
+			if inDetail := state.Fuzzy(m.input, e.detail); inDetail >= 0 {
 				score = inDetail + detailPenalty
 			}
 		}

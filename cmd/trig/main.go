@@ -49,6 +49,12 @@ func parse(fs *flag.FlagSet, args []string) (helped bool, err error) {
 func run(args []string) error {
 	if len(args) > 0 {
 		switch args[0] {
+		case "new":
+			return runNew(args[1:])
+		case "ls":
+			return runLs(args[1:])
+		case "attach":
+			return runAttach(args[1:])
 		case "doctor":
 			return runDoctor(args[1:])
 		case "emit-status":
@@ -64,11 +70,27 @@ func runTUI(args []string) error {
 	fs := flag.NewFlagSet("trig", flag.ContinueOnError)
 	workspace := fs.String("w", "", "workspace to open (default: the configured default workspace)")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: trig [-w workspace]\n       trig doctor\n       trig emit-status <state> [detail...]\n       trig init-hooks claude\n\nflags:\n")
+		fmt.Fprintf(fs.Output(), `usage: trig [-w workspace]
+       trig new [-w workspace] [-k kind] [-t title] [--cmd command] [-d dir]
+       trig ls [-w workspace] [--json]
+       trig attach [-w workspace] <node>
+       trig doctor
+       trig emit-status <state> [detail...]
+       trig init-hooks claude
+
+flags:
+`)
 		fs.PrintDefaults()
 	}
 	if helped, err := parse(fs, args); helped || err != nil {
 		return err
+	}
+
+	if fs.NArg() > 0 {
+		// Most often a subcommand that was mistyped: without this, `trig sl`
+		// opens the map rather than saying there is no such command.
+		fs.Usage()
+		return fmt.Errorf("unexpected argument %q: trig opens the map, and a workspace is named with -w", fs.Arg(0))
 	}
 
 	cfg, err := loadConfig()
@@ -92,9 +114,16 @@ func runTUI(args []string) error {
 		return err
 	}
 
-	_, err = tea.NewProgram(tui.New(cfg, ws, stateDir, tmux.CLI{}), tea.WithAltScreen()).Run()
+	_, err = tea.NewProgram(tui.New(cfg, ws, stateDir, tmuxCLI()), tea.WithAltScreen()).Run()
 	return err
 }
+
+// tmuxCLI is the one place a tmux client is built, so that every command talks
+// to the same server. The socket is read from the environment for the tests,
+// which run against a private server so that nothing they do can touch the
+// sessions the user is actually working in; unset — the ordinary case — is
+// tmux's own default server.
+func tmuxCLI() tmux.CLI { return tmux.CLI{Socket: os.Getenv("TRIG_TMUX_SOCKET")} }
 
 func runDoctor(args []string) error {
 	fs := flag.NewFlagSet("trig doctor", flag.ContinueOnError)

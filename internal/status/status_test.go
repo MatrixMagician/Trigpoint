@@ -267,3 +267,32 @@ func TestRemovingAWorkspaceLeavesTheWorkspaceWhoseNameSharesItsPrefix(t *testing
 		t.Errorf("main_thing reads %v, %v; want its report still there", reports, err)
 	}
 }
+
+// Staleness is the rule the map's badge and `trig ls` both read, so it lives
+// here rather than in either of them.
+func TestOnlyARunningReportGoesStale(t *testing.T) {
+	old := time.Now().Add(-time.Hour)
+	window := time.Minute
+
+	if !(Report{State: Running, TS: old}).Stale(window) {
+		t.Error("a running report older than the window is stale")
+	}
+	if (Report{State: Running, TS: time.Now()}).Stale(window) {
+		t.Error("a report inside the window is not stale")
+	}
+	for _, state := range []State{NeedsYou, Done, Error} {
+		// The other three are reports of something that has finished happening,
+		// and an old one of those is not a report to stop trusting.
+		if (Report{State: state, TS: old}).Stale(window) {
+			t.Errorf("a %s report should never go stale", state)
+		}
+	}
+	if (Report{State: Running, TS: old}).Stale(0) {
+		t.Error("a window of zero turns staleness off")
+	}
+	if (Report{State: Running}).Stale(window) {
+		// The minimal report an agent can write is the state and nothing else,
+		// and reading it as a report from the epoch would call it stale for ever.
+		t.Error("a report with no stamp has no age to have outlived anything")
+	}
+}

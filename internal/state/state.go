@@ -114,6 +114,26 @@ type Workspace struct {
 // prompt that collects a name bounds what can be typed by it.
 const MaxNameLen = 64
 
+// MaxTitleLen keeps a title inside a card and inside a sensible status line.
+// Titles are typed by hand — at a prompt or on the command line — so this is a
+// trust boundary, not a style rule.
+const MaxTitleLen = 48
+
+// MaxCmdLen bounds a hand-typed command line. Like a title it is typed by hand
+// and stored, but it is a command rather than a label: it has to hold a real
+// invocation with flags and a path or two, and be refused rather than truncated
+// — half a command line is a different command line.
+const MaxCmdLen = 200
+
+// ClampRunes cuts text to at most n runes. Runes and not cells: this is a bound
+// on what is stored, and the card does its own cutting to fit the width it has.
+func ClampRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}
+
 // ValidName reports whether name is safe to use as a workspace file name. Names
 // arrive from the command line, so this is a trust boundary: anything that could
 // escape the state directory or confuse the filesystem is rejected outright.

@@ -139,21 +139,3 @@ func TestAFilterThatMatchesNothingSaysSo(t *testing.T) {
 		t.Errorf("a filter with no matches should say so rather than draw a blank map, got:\n%s", m.View())
 	}
 }
-
-func TestFuzzyMatchesSubsequencesAndScoresTightestFirst(t *testing.T) {
-	if fuzzy("asrv", "api-server") < 0 {
-		t.Error("a fuzzy match should take the pattern's characters in order, not together")
-	}
-	if fuzzy("API", "api-server") < 0 {
-		t.Error("a fuzzy match should ignore case")
-	}
-	if fuzzy("zq", "api-server") >= 0 {
-		t.Error("characters that are not there are not a match")
-	}
-	if fuzzy("", "api-server") != 0 {
-		t.Error("an empty pattern matches everything, perfectly")
-	}
-	if fuzzy("api", "api-server") >= fuzzy("api", "an api server") {
-		t.Error("a tighter match should score lower than a scattered one")
-	}
-}

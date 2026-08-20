@@ -133,6 +133,20 @@ func Write(path string, state State, detail string) error {
 	return nil
 }
 
+// Stale reports whether a report has outlived a window and should no longer be
+// read as current. Only running goes stale: the other three are reports of
+// something that has finished happening, and an old one of those is not a
+// report there is any reason to stop trusting.
+//
+// A window of zero turns staleness off rather than marking every report the
+// moment it lands. A report with no stamp has no age to have outlived anything:
+// the stamp is the agent's own and the contract asks for one, but the minimal
+// report an agent can write — the state and nothing else — is one Read accepts,
+// and reading it as a report from the epoch would call it stale for ever.
+func (r Report) Stale(after time.Duration) bool {
+	return r.State == Running && after > 0 && !r.TS.IsZero() && time.Since(r.TS) > after
+}
+
 // Read is every report belonging to one workspace, by node id. A directory
 // nobody has written to yet is no reports rather than a failure — it is what a
 // map with no agents on it looks like from here.

@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -13,7 +12,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/MatrixMagician/Trigpoint/internal/state"
-	"github.com/MatrixMagician/Trigpoint/internal/status"
 	"github.com/MatrixMagician/Trigpoint/internal/tmux"
 )
 
@@ -41,10 +39,6 @@ type Sessions interface {
 	// as long as ctx runs.
 	Watch(ctx context.Context) <-chan tmux.Event
 }
-
-// maxTitleLen keeps a title inside a card and inside a sensible status line.
-// Titles are typed by hand, so this is a trust boundary, not a style rule.
-const maxTitleLen = 48
 
 type nodeCreatedMsg struct {
 	node state.Node
@@ -93,7 +87,7 @@ func (m Model) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input = string(r[:len(r)-1])
 		}
 	case tea.KeyRunes, tea.KeySpace:
-		m.input = clampRunes(m.input+sanitise(string(msg.Runes)), maxTitleLen)
+		m.input = state.ClampRunes(m.input+sanitise(string(msg.Runes)), state.MaxTitleLen)
 	}
 	return m, nil
 }
@@ -129,46 +123,12 @@ func (m Model) createNode() (tea.Model, tea.Cmd) {
 	}
 	m.pending = append(append([]state.Node(nil), m.pending...), node)
 
-	sessions, workspace, dir := m.sessions, m.ws.Name, m.dirOf(node)
-	env := provenance(workspace, node, m.statusDir)
+	sessions, workspace, dir := m.sessions, m.ws.Name, m.ws.DirOf(node)
+	env := state.Provenance(workspace, node, m.statusDir)
 	return m, func() tea.Msg {
-		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, startCmd(node), env)
+		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, node.StartCmd(), env)
 		return nodeCreatedMsg{node: node, err: err}
 	}
-}
-
-// provenance is what a session carries about the node behind it (§5.2). It is
-// what reconciliation reads back when the workspace file has been lost, so a
-// session started here and a session respawned later have to say the same thing.
-func provenance(workspace string, n state.Node, statusDir string) map[string]string {
-	env := map[string]string{
-		"TRIG_WORKSPACE": workspace,
-		"TRIG_NODE_ID":   n.ID,
-		"TRIG_NODE_KIND": string(n.Kind),
-	}
-	// Where the agent reports what it is doing (§8). Only an agent node gets
-	// one: it is the only kind that reports agent status (CONTEXT.md, "Agent
-	// node"), and handing a shell node a status file would be inviting a badge
-	// onto a card that has no agent to earn it.
-	if n.Kind == state.KindAgent && statusDir != "" {
-		// The directory is made here so that an agent writing the file itself —
-		// the documented contract, and not everything has hooks that can shell
-		// out — does not have to create it first. Best effort: emit-status
-		// creates it too, and a status directory that cannot be made is a map
-		// without badges rather than a node that refuses to start.
-		_ = os.MkdirAll(statusDir, 0o700)
-		env["TRIG_STATUS_FILE"] = status.Path(statusDir, workspace, n.ID)
-	}
-	return env
-}
-
-// dirOf is where a node's session starts: its own working directory, or the
-// workspace's when it has none of its own.
-func (m Model) dirOf(n state.Node) string {
-	if n.Dir != "" {
-		return n.Dir
-	}
-	return m.ws.Dir
 }
 
 func (m Model) updateConfirmKill(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -204,7 +164,7 @@ func (m Model) updateConfirmKill(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// An adopted node kills the foreign session it was adopted from: the
 			// card is over a real session, and the confirmation it took to get here
 			// is the same one every other node's kill takes (§9.3).
-			sessions, session, stamp := m.sessions, m.sessionOf(node), m.stamp()
+			sessions, session, stamp := m.sessions, m.ws.SessionOf(node), m.stamp()
 			kills = append(kills, func() tea.Msg {
 				err := sessions.Kill(session)
 				return nodeKilledMsg{mapStamp: stamp, id: id, err: err}
@@ -610,9 +570,9 @@ func card(n state.Node, cursor, inSelection, dead bool, mark badgeMark, group st
 	}
 	// A note has no session, so no liveness and no agent status — its card
 	// carries no badge at all rather than a badge that means nothing.
-	lead, trail := "╭─ "+mark.glyph+" ", kindLabel(n.Kind)+age(n.CreatedAt)
+	lead, trail := "╭─ "+mark.glyph+" ", n.Kind.Label()+age(n.CreatedAt)
 	if !n.HasSession() {
-		lead, trail = "╭─ ", kindLabel(n.Kind)
+		lead, trail = "╭─ ", n.Kind.Label()
 	}
 	// Tags sit at the right-hand end of the *bottom* border, after the kind and
 	// the age, and take what those leave. The top border is the title's alone:
@@ -762,19 +722,6 @@ func tagLabel(tags []string) string {
 		return ""
 	}
 	return "#" + strings.Join(tags, " #")
-}
-
-func kindLabel(k state.Kind) string {
-	switch k {
-	case state.KindShell:
-		return "sh"
-	case state.KindAgent:
-		return "ag"
-	case state.KindNote:
-		return "note"
-	default:
-		return string(k)
-	}
 }
 
 // age is how long the node has existed, in the coarsest unit that still says

@@ -45,23 +45,22 @@ func (m Model) reconcile() tea.Cmd {
 	// map twice — but it is not classified: the session is being made right
 	// now, and "not there yet" is not the same as dead.
 	owned := make(map[string]bool, len(m.ws.Nodes)+len(m.pending))
-	placed := make(map[string]string, len(m.ws.Nodes))
 	for _, n := range m.pending {
-		owned[m.sessionOf(n)] = true
+		owned[m.ws.SessionOf(n)] = true
 	}
 	for _, n := range m.ws.Nodes {
 		if n.HasSession() {
 			// The node's own session name, which for an adopted node is the
 			// foreign one it stores rather than one derived from its id (§9.3).
 			// That is the whole of what reconciliation has to know about
-			// adoption: a foreign session with a node is placed, and one without
-			// is a stranger the orphan pass below already leaves alone.
-			session := m.sessionOf(n)
-			owned[session], placed[session] = true, n.ID
+			// adoption: a foreign session with a node has been accounted for,
+			// and one without is a stranger the orphan pass below leaves alone.
+			owned[m.ws.SessionOf(n)] = true
 		}
 	}
 
-	sessions, workspace, at, stamp := m.sessions, m.ws.Name, m.corrections, m.stamp()
+	sessions, ws, at, stamp := m.sessions, m.ws, m.corrections, m.stamp()
+	workspace := ws.Name
 	return func() tea.Msg {
 		names, err := sessions.List()
 		if err != nil {
@@ -69,17 +68,9 @@ func (m Model) reconcile() tea.Cmd {
 			// not condemn every node on the strength of not knowing.
 			return reconciledMsg{mapStamp: stamp, err: err, at: at}
 		}
-		running := make(map[string]bool, len(names))
-		for _, name := range names {
-			running[name] = true
-		}
-
-		dead := map[string]bool{}
-		for session, id := range placed {
-			if !running[session] {
-				dead[id] = true
-			}
-		}
+		// Liveness is the workspace's own rule, so that `trig ls` and the map
+		// call the same node dead (ADR 0017).
+		dead := ws.Dead(names)
 
 		// Sorted, so that two orphans reconstructed in the same pass land in
 		// the same two cells every time.
@@ -215,10 +206,10 @@ type respawnedMsg struct {
 // node keeps its id — and so its session name, its place, and everything else
 // it is — because respawning is not creating a new node.
 func (m Model) respawn(node state.Node) (tea.Model, tea.Cmd) {
-	sessions, workspace, dir, stamp := m.sessions, m.ws.Name, m.dirOf(node), m.stamp()
-	env := provenance(workspace, node, m.statusDir)
+	sessions, workspace, dir, stamp := m.sessions, m.ws.Name, m.ws.DirOf(node), m.stamp()
+	env := state.Provenance(workspace, node, m.statusDir)
 	return m, func() tea.Msg {
-		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, startCmd(node), env)
+		err := sessions.Create(tmux.SessionName(workspace, node.ID), dir, node.StartCmd(), env)
 		return respawnedMsg{mapStamp: stamp, id: node.ID, err: err}
 	}
 }
