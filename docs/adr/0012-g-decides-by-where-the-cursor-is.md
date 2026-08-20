@@ -2,8 +2,12 @@
 
 `g` has the two jobs SPEC §7.3 gives it — create a group from the selection, and add to the
 group under the cursor — and chooses between them by position alone: the cursor inside an
-existing rect means join, anywhere else means create. There is no group mode, no second
-binding, and nothing to select a group with.
+existing rect means join, anywhere else means create. There is no group mode and no second
+binding.
+
+> Amended by [ADR 0013](0013-a-group-is-held-with-V.md): `V` holds the group under the
+> cursor so that it can be moved, resized, and deleted. `g` is unchanged — it still decides
+> by position and still has nothing to select.
 
 This follows from groups being spatial (ADR 0001). A group *is* a region of the map, so
 pointing at it is the whole of naming it, and any other way of choosing one would be a

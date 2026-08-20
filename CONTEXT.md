@@ -63,6 +63,13 @@ Membership is containment and nothing else: there is no member list that can dis
 what is drawn.
 _Avoid_: folder, cluster, tag group
 
+**Hold**:
+Having picked a group up with `V`, so that the motion keys move and resize the rectangle
+rather than a card. Held, not selected: the selection is nodes, and a hold is one group and
+never several. It ends at `Esc` and never outlives the map view; see
+[ADR 0013](docs/adr/0013-a-group-is-held-with-V.md).
+_Avoid_: group mode, group select, grabbed
+
 **Tag**:
 A label marking nodes that belong together regardless of where they sit. The logical
 counterpart to a group — tags cross the map freely, groups *are* the map. On a card a tag is

@@ -305,3 +305,247 @@ func TestEveryLineOfTheMapIsTheSameWidth(t *testing.T) {
 		}
 	}
 }
+
+// Holding a group (SPEC §6, §7.3, docs/adr/0013-a-group-is-held-with-V.md): `V`
+// picks up the group under the cursor, HJKL moves it rigidly, hjkl resizes it,
+// x deletes it without killing what is inside, esc lets go.
+
+func TestVHoldsTheGroupUnderTheCursor(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "V")
+	if m.holding != "g1" {
+		t.Fatalf("V should have picked up g1, holding %q", m.holding)
+	}
+	if len(m.held) != 2 {
+		t.Errorf("the members are snapshotted when the gesture begins, got %v", m.held)
+	}
+	m = pressKeys(t, m, "V")
+	if m.holding != "" {
+		t.Errorf("V again lets go, still holding %q", m.holding)
+	}
+}
+
+func TestVOnACellInNoGroupDoesNothing(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "l", "l", "V") // out to ccc, which sits outside the rect
+	if m.holding != "" {
+		t.Errorf("there is no group under the cursor, holding %q", m.holding)
+	}
+}
+
+func TestMovingAHeldGroupCarriesItsMembers(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "V", "L")
+
+	if got, want := m.ws.Groups[0].Rect.Min, (state.Cell{Col: 1}); got != want {
+		t.Errorf("the rect starts at %+v, want %+v", got, want)
+	}
+	for id, want := range map[string]state.Cell{"aaa": {Col: 1}, "bbb": {Col: 2}} {
+		if got := posOf(t, m, id); got != want {
+			t.Errorf("%s is at %+v, want %+v — a group carries its members", id, got, want)
+		}
+	}
+	if m.ws.Viewport.Cursor != (state.Cell{Col: 1}) {
+		t.Errorf("the cursor rides along, at %+v", m.ws.Viewport.Cursor)
+	}
+	for _, id := range []string{"aaa", "bbb"} {
+		if n, _ := m.node(id); m.groupOf(n) != "infra" {
+			t.Errorf("%s left the group it was carried by", id)
+		}
+	}
+}
+
+func TestAHeldGroupShovesABystanderRatherThanAbsorbingIt(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "V", "L", "L", "L")
+
+	n, _ := m.node("ccc")
+	if m.groupOf(n) != "" {
+		t.Errorf("ccc at %+v was absorbed by the rect %+v it was shoved by", n.Pos, m.ws.Groups[0].Rect)
+	}
+	if n.Pos == (state.Cell{Col: 4}) {
+		t.Errorf("ccc should have been shoved out of the way, still at %+v", n.Pos)
+	}
+}
+
+func TestAHeldGroupGrowsAndShrinks(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "V", "l")
+	if got := m.ws.Groups[0].Rect.Max.Col; got != 3 {
+		t.Errorf("l should have grown the rect a column, Max.Col is %d", got)
+	}
+	m = pressKeys(t, m, "h", "h")
+	if got := m.ws.Groups[0].Rect.Max.Col; got != 1 {
+		t.Fatalf("h should have shrunk the rect, Max.Col is %d", got)
+	}
+	if n, _ := m.node("bbb"); m.groupOf(n) != "" {
+		t.Errorf("bbb at %+v was shrunk past and should be in no group", n.Pos)
+	}
+	if got := posOf(t, m, "bbb"); got != (state.Cell{Col: 1}) {
+		t.Errorf("bbb moved to %+v; shrinking drops a node, it does not push one", got)
+	}
+	if n, _ := m.node("aaa"); m.groupOf(n) != "infra" {
+		t.Errorf("aaa is still inside the rect and should still say so")
+	}
+}
+
+func TestAShrunkGroupNoLongerCarriesWhatItDropped(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "V", "h", "J")
+
+	if got := posOf(t, m, "bbb"); got != (state.Cell{Col: 1}) {
+		t.Errorf("bbb was dropped by the shrink and should not have been carried, at %+v", got)
+	}
+	if got := posOf(t, m, "aaa"); got != (state.Cell{Row: 1}) {
+		t.Errorf("aaa is still a member and should have moved, at %+v", got)
+	}
+}
+
+func TestXDeletesTheHeldGroupAndKeepsItsNodes(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "V", "x")
+
+	if m.mode != modeNormal {
+		t.Errorf("deleting a group kills nothing, so there is nothing to confirm; mode is %v", m.mode)
+	}
+	if len(m.ws.Groups) != 0 {
+		t.Errorf("x should have deleted the group, got %+v", m.ws.Groups)
+	}
+	if len(m.ws.Nodes) != 3 {
+		t.Errorf("the nodes inside a deleted group survive it, got %d", len(m.ws.Nodes))
+	}
+	if m.holding != "" {
+		t.Errorf("the group is gone, so nothing is held; holding %q", m.holding)
+	}
+}
+
+func TestEscLetsGoAndTheMotionKeysMoveNodesAgain(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "V")
+	m, _ = press(t, m, tea.KeyEsc)
+	if m.holding != "" {
+		t.Fatalf("esc should have let go, holding %q", m.holding)
+	}
+
+	before := m.ws.Groups[0].Rect
+	m = pressKeys(t, m, "L")
+	if m.ws.Groups[0].Rect != before {
+		t.Errorf("the rect moved to %+v with nothing held", m.ws.Groups[0].Rect)
+	}
+	if got := posOf(t, m, "aaa"); got != (state.Cell{Col: 1}) {
+		t.Errorf("L should be moving the node again, aaa is at %+v", got)
+	}
+}
+
+func TestAGroupStopsAtAnotherGroupAndSaysSo(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m.ws.Groups = append(m.ws.Groups, state.Group{ID: "g2", Title: "web", Colour: "green",
+		Rect: state.Rect{Min: state.Cell{Col: 2}, Max: state.Cell{Col: 4, Row: 2}}})
+	m = pressKeys(t, m, "V", "L")
+
+	if m.ws.Groups[0].Rect != wholeRect {
+		t.Errorf("the rect moved onto another group, to %+v", m.ws.Groups[0].Rect)
+	}
+	if m.status == "" {
+		t.Error("a move that could not happen should say why")
+	}
+}
+
+func TestTheStatusBarSaysWhatAHeldGroupCanDo(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "V")
+	view := m.View()
+	if !strings.Contains(view, "infra") || !strings.Contains(view, heldHints) {
+		t.Errorf("the bar should name the held group and its keys, got:\n%s", view)
+	}
+}
+
+func TestHoldingAGroupLetsGoOfTheSelection(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "v", "V")
+	if len(m.selection) != 0 {
+		t.Errorf("V takes over the motion keys, so the selection goes: %v", m.selection)
+	}
+}
+
+func TestAMovedGroupSurvivesAReload(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "V", "J")
+
+	reloaded, err := state.Load(m.stateDir, "main")
+	if err != nil {
+		t.Fatalf("reloading the workspace: %v", err)
+	}
+	if len(reloaded.Groups) != 1 || reloaded.Groups[0].Rect != m.ws.Groups[0].Rect {
+		t.Errorf("the move did not reach the file: %+v", reloaded.Groups)
+	}
+	n, _ := m.node("aaa")
+	if _, ok := reloaded.GroupAt(n.Pos); !ok {
+		t.Errorf("aaa at %+v is outside the reloaded rect", n.Pos)
+	}
+}
+
+func TestTheArrowsResizeAHeldGroupAsHjklDo(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "V", "right")
+	if got := m.ws.Groups[0].Rect.Max.Col; got != 3 {
+		t.Errorf("the right arrow should have grown the rect, Max.Col is %d", got)
+	}
+	m = pressKeys(t, m, "left")
+	if got := m.ws.Groups[0].Rect.Max.Col; got != 2 {
+		t.Errorf("the left arrow should have pulled it back, Max.Col is %d", got)
+	}
+}
+
+// TestAnAdoptionAnswerDoesNotLandOnAHeldGroup is the same hazard the picker's
+// mode guard exists for: a hold is a gesture in progress even though it is not
+// a mode, and a picker opening over one takes the keyboard from it.
+func TestAnAdoptionAnswerDoesNotLandOnAHeldGroup(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "V")
+	m = update(t, m, adoptableMsg{names: []string{"stranger"}})
+
+	if m.mode == modeAdopt {
+		t.Error("the picker took the keyboard from a group being held")
+	}
+	if m.holding != "g1" {
+		t.Errorf("the hold should have survived the answer, holding %q", m.holding)
+	}
+}
+
+// TestTheCursorOnlyRidesAGroupItIsOver is what a create landing mid-gesture
+// does: the new card takes the cursor (§9.1), and a cursor dragged on from
+// there would walk off the map a cell per keystroke.
+func TestTheCursorOnlyRidesAGroupItIsOver(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "V")
+	m.ws.Viewport.Cursor = state.Cell{Col: 4} // where a create left it
+	m = pressKeys(t, m, "J")
+
+	if m.ws.Viewport.Cursor != (state.Cell{Col: 4}) {
+		t.Errorf("the cursor was outside the rect and should have stayed put, at %+v", m.ws.Viewport.Cursor)
+	}
+	if got := posOf(t, m, "aaa"); got != (state.Cell{Row: 1}) {
+		t.Errorf("the group should still have moved, aaa is at %+v", got)
+	}
+}
+
+func TestShrinkingPastTheCursorBringsItBackIn(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "l", "V") // the cursor on bbb, at the far column
+	m = pressKeys(t, m, "h")
+
+	rect := m.ws.Groups[0].Rect
+	if !rect.Contains(m.ws.Viewport.Cursor) {
+		t.Errorf("the cursor at %+v was left outside the rect %+v it is holding",
+			m.ws.Viewport.Cursor, rect)
+	}
+}
+
+func TestVOnNoGroupSaysSoRatherThanFailingQuietly(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = pressKeys(t, m, "l", "l", "V") // out to ccc, which is in no group
+	if m.status == "" {
+		t.Error("a hold that could not happen should say why: x means something else without one")
+	}
+}

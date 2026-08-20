@@ -124,10 +124,8 @@ func (ws Workspace) Join(r Rect, ids []string) ([]Node, Rect) {
 // bystander would absorb it into the group, which is the one thing containment
 // as membership must never do silently.
 func (ws Workspace) grow(r Rect) (Workspace, Rect) {
-	right := Cell{Col: 1}
-	rightStrip := Rect{Min: Cell{Col: r.Max.Col, Row: r.Min.Row}, Max: Cell{Col: r.Max.Col + 1, Row: r.Max.Row}}
-	down := Cell{Row: 1}
-	downStrip := Rect{Min: Cell{Col: r.Min.Col, Row: r.Max.Row}, Max: Cell{Col: r.Max.Col, Row: r.Max.Row + 1}}
+	right, down := Cell{Col: 1}, Cell{Row: 1}
+	rightStrip, downStrip := leadingStrip(r, right), leadingStrip(r, down)
 
 	cols, rows := r.Size()
 	d, strip, other, otherStrip := right, rightStrip, down, downStrip
@@ -140,15 +138,10 @@ func (ws Workspace) grow(r Rect) (Workspace, Rect) {
 	// when the squarer way is spoken for.
 	// ponytail: a group boxed in on both sides overlaps anyway; there is nowhere
 	// else for it to go, and refusing the join would be a worse answer.
-	if ws.groupIn(strip) && !ws.groupIn(otherStrip) {
+	if ws.groupIn(strip, "") && !ws.groupIn(otherStrip, "") {
 		d, strip = other, otherStrip
 	}
-	var inTheWay []string
-	for _, n := range ws.Nodes {
-		if strip.Contains(n.Pos) {
-			inTheWay = append(inTheWay, n.ID)
-		}
-	}
+	inTheWay := ws.Members(strip)
 	if len(inTheWay) > 0 {
 		ws.Nodes = ws.Shift(inTheWay, d)
 	}
@@ -156,10 +149,11 @@ func (ws Workspace) grow(r Rect) (Workspace, Rect) {
 	return ws, r
 }
 
-// groupIn reports whether any group already reaches into these cells.
-func (ws Workspace) groupIn(r Rect) bool {
+// groupIn reports whether any group already reaches into these cells, ignoring
+// the one named — a group being moved or grown is never in its own way.
+func (ws Workspace) groupIn(r Rect, except string) bool {
 	for _, g := range ws.Groups {
-		if r.Overlaps(g.Rect) {
+		if g.ID != except && r.Overlaps(g.Rect) {
 			return true
 		}
 	}
@@ -294,4 +288,105 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// MoveGroup steps a group one cell of d, carrying the members it was picked up
+// with and shoving everyone else out from under it. The member set is given
+// rather than derived, so that a gesture moves what it started on — see
+// docs/adr/0013-a-group-is-held-with-V.md.
+//
+// Whoever stands in the strip of cells the rect is about to reach is shoved by
+// the same step under the map's one collision rule, which puts them a cell
+// beyond the rect's new leading edge rather than inside it. That is what makes
+// containment sufficient: a group cannot drift over a bystander and absorb it.
+//
+// It refuses only for another group. Two rects sharing cells would hand every
+// node in the overlap to whichever was drawn first, which is membership
+// changing without anything on the map moving.
+func (ws Workspace) MoveGroup(id string, members []string, d Cell) ([]Node, Rect, bool) {
+	g, ok := ws.group(id)
+	if !ok {
+		return nil, Rect{}, false
+	}
+	next := Rect{
+		Min: Cell{Col: g.Rect.Min.Col + d.Col, Row: g.Rect.Min.Row + d.Row},
+		Max: Cell{Col: g.Rect.Max.Col + d.Col, Row: g.Rect.Max.Row + d.Row},
+	}
+	if ws.groupIn(next, id) {
+		return nil, Rect{}, false
+	}
+	moving := append(append([]string(nil), members...), ws.Members(leadingStrip(g.Rect, d))...)
+	return ws.Shift(moving, d), next, true
+}
+
+// ResizeGroup moves a group's far edge by d, leaving its Min where it is. What
+// it grows into is shoved aside exactly as a join's growth is; what it shrinks
+// past is simply left behind, because membership is containment and a rect that
+// no longer reaches a node is a node no longer in the group.
+//
+// A rect is never shrunk to nothing: a group with no cells in it is one nothing
+// can ever be in and nothing can draw.
+func (ws Workspace) ResizeGroup(id string, d Cell) ([]Node, Rect, bool) {
+	g, ok := ws.group(id)
+	if !ok {
+		return nil, Rect{}, false
+	}
+	next := g.Rect
+	next.Max = Cell{Col: next.Max.Col + d.Col, Row: next.Max.Row + d.Row}
+	if cols, rows := next.Size(); cols == 0 || rows == 0 {
+		return nil, Rect{}, false
+	}
+	if ws.groupIn(next, id) {
+		return nil, Rect{}, false
+	}
+	nodes := ws.Nodes
+	// Growth only, and the guard is what makes leadingStrip the right question
+	// to ask: a resize moves Max and never Min, so a negative d here would ask
+	// about the strip behind the far side of the rectangle.
+	if d.Col > 0 || d.Row > 0 {
+		if inTheWay := ws.Members(leadingStrip(g.Rect, d)); len(inTheWay) > 0 {
+			nodes = ws.Shift(inTheWay, d)
+		}
+	}
+	return nodes, next, true
+}
+
+// Members is every node whose cell falls inside a rect, in the order the map
+// holds them. It is what a gesture snapshots when it picks a group up, and the
+// only thing membership ever means.
+func (ws Workspace) Members(r Rect) []string {
+	var ids []string
+	for _, n := range ws.Nodes {
+		if r.Contains(n.Pos) {
+			ids = append(ids, n.ID)
+		}
+	}
+	return ids
+}
+
+// leadingStrip is the one-cell-deep strip of cells just outside r's edge in
+// direction d — the cells a rect moving or growing that way is about to claim.
+// A negative d shrinks rather than claims, so the strip is behind the retreating
+// edge and nothing stands to be shoved out of it.
+func leadingStrip(r Rect, d Cell) Rect {
+	switch {
+	case d.Col > 0:
+		return Rect{Min: Cell{Col: r.Max.Col, Row: r.Min.Row}, Max: Cell{Col: r.Max.Col + 1, Row: r.Max.Row}}
+	case d.Col < 0:
+		return Rect{Min: Cell{Col: r.Min.Col - 1, Row: r.Min.Row}, Max: Cell{Col: r.Min.Col, Row: r.Max.Row}}
+	case d.Row > 0:
+		return Rect{Min: Cell{Col: r.Min.Col, Row: r.Max.Row}, Max: Cell{Col: r.Max.Col, Row: r.Max.Row + 1}}
+	case d.Row < 0:
+		return Rect{Min: Cell{Col: r.Min.Col, Row: r.Min.Row - 1}, Max: Cell{Col: r.Max.Col, Row: r.Min.Row}}
+	}
+	return Rect{}
+}
+
+func (ws Workspace) group(id string) (Group, bool) {
+	for _, g := range ws.Groups {
+		if g.ID == id {
+			return g, true
+		}
+	}
+	return Group{}, false
 }

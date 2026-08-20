@@ -67,6 +67,12 @@ type Model struct {
 	// were gathered. Empty is the map's ordinary state: the node under the
 	// cursor is then the selection, and every bulk action falls back to it.
 	selection []string
+	// holding is the group `V` has picked up (§7.3), by id, and held is the
+	// nodes inside it at the moment it was picked up — the snapshot a rigid
+	// move carries, so that a gesture moves what it began on. Empty is the
+	// map's ordinary state, in which the motion keys move cards.
+	holding string
+	held    []string
 	// filter narrows the map to the cards matching it (§7.1). It outlives the
 	// prompt that collects it — a filter is how the map is being looked at, and
 	// Esc is the only thing that clears it.
@@ -196,6 +202,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// A held group answers the motion keys first: while one is in hand they
+	// move the rectangle, and letting them reach the map as well would move a
+	// card and a group with one press.
+	if m.holding != "" {
+		return m.updateHeld(msg)
+	}
 	m.status = ""
 	// motion is asked first and its model kept either way: a key it does not
 	// take is still a key that ends a half-typed count.
@@ -252,6 +264,8 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.editAttr(modeTags, func(n state.Node) string { return strings.Join(n.Tags, " ") })
 	case "v":
 		return m.toggleSelect()
+	case "V":
+		return m.hold()
 	case "g":
 		return m.group()
 	case "c":
@@ -390,6 +404,10 @@ func (m Model) statusBar() string {
 		return m.bar(statusStyle, fmt.Sprintf("Kill %s and its session? (y/n)", flatten(node.Title)))
 	case m.status != "":
 		return m.bar(errorStyle, flatten(m.status))
+	case m.holding != "":
+		// The keys a held group answers are not the keys the map answers, so
+		// they are on the bar for as long as it is held.
+		return m.bar(statusStyle, fmt.Sprintf("Group %s · %s", flatten(m.heldTitle()), heldHints))
 	}
 
 	left := fmt.Sprintf("%s · %s", m.ws.Name, pluralise(len(m.ws.Nodes), "node"))
