@@ -216,7 +216,7 @@ func TestACardWithNoPreviewLinesAsksTmuxForNothing(t *testing.T) {
 	cfg := config.Default()
 	cfg.General.PreviewLines.M = 0
 	sessions := &fakeSessions{}
-	m := New(cfg, state.Workspace{Name: "main", Nodes: []state.Node{
+	m := mustNew(t, cfg, state.Workspace{Name: "main", Nodes: []state.Node{
 		{ID: "aaa", Kind: state.KindShell, Title: "api"},
 	}}, t.TempDir(), sessions)
 	m = update(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})

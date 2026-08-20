@@ -246,6 +246,36 @@ _Avoid_: search (that is the palette's), hide, query
 **Palette**:
 The single fuzzy list over every command, every node on every map, every workspace, and
 every session there is to adopt. The discoverability backstop — bindings are the fast path,
-and an action reachable only by its binding is one nobody can find. Command entries replay
-their own bindings rather than reimplementing them.
+and an action reachable only by its binding is one nobody can find. A command entry and the
+key that runs it are the same function, taken from the same table as the keymap.
 _Avoid_: menu, launcher, command bar, palette (for the accent colours — those are a *set*)
+
+**Action**:
+One thing the map does, under a name config can bind a key to. The unit the keymap, the
+palette, the status bar's hints, and the help overlay are all lists of — so an action is
+added once, and appears in four places without being written into any of them. An action
+bound to nothing is not a missing action: it is one reachable through the palette and
+nowhere else.
+_Avoid_: command (for the name — a command is the palette's word for the same thing),
+handler, verb
+
+**Keymap**:
+What every key the map answers to does, resolved once at startup from the defaults and
+whatever config overrides. A binding is alternatives separated by commas, each a sequence of
+keys separated by spaces. It is validated rather than trusted: an unknown action, a key
+bound twice, or a binding that is the start of another is refused before the map opens; see
+[ADR 0018](docs/adr/0018-the-keymap-is-the-command-table.md).
+_Avoid_: bindings (for the whole), shortcuts, hotkeys
+
+**Help overlay**:
+The full-screen list `?` opens: every action and the keys it currently answers to, then the
+keys of each modal context. Generated from the live keymap and never written down, because a
+help screen that can disagree with the keyboard is worse than none.
+_Avoid_: cheatsheet, help screen, key reference
+
+**Context** (modal):
+One place the keyboard means something other than what it means on the map — a gathered
+selection, a held group, the filter prompt, the palette, a peek. A context's keys are fixed
+rather than remappable, and each is one table the status bar's contextual hints and the
+overlay's section are both rendered from.
+_Avoid_: mode (the prompts are modes; a context is what the keys mean in one)

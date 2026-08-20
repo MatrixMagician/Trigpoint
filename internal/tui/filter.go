@@ -23,6 +23,19 @@ import (
 // key.
 const maxQueryLen = 48
 
+// filterKeys are the keys the filter prompt answers to, for the overlay. A
+// filter outlives its prompt — Enter leaves it on and Esc is the only thing
+// that clears it — so what each of the two ways out does is worth saying.
+var filterKeys = contextKeys{
+	title: "Filter",
+	when:  "while / is collecting a filter",
+	keys: []keyHint{
+		{"⏎", "keep", "Close the prompt and leave the filter narrowing the map"},
+		{"esc", "clear", "Clear the filter and show the whole map again"},
+		{"⌫", "back", "Rub out a character; the map re-narrows as you type"},
+	},
+}
+
 // openFilter puts the prompt up on the filter already active, so `/` is a way
 // of refining a narrowed map rather than a way of starting again.
 func (m Model) openFilter() (tea.Model, tea.Cmd) {

@@ -45,12 +45,17 @@ const (
 	modePalette
 	modeAgent
 	modeAgentCmd
+	modeHelp
 )
 
 // Model is the map view's state. The workspace it renders is owned here; the
 // terminal size arrives from Bubble Tea and is zero until the first resize.
 type Model struct {
-	cfg      config.Config
+	cfg config.Config
+	// keys is the resolved keymap (§7.3, §10): what every key the map answers
+	// to does, and what keys each action answers to. It is resolved once, at
+	// startup, so a map view is never running on a keymap that does not work.
+	keys     Keymap
 	ws       state.Workspace
 	stateDir string
 	// statusDir is where agent nodes report what they are doing (§8). It sits
@@ -72,6 +77,14 @@ type Model struct {
 	creatingCmd   string       // the command an agent node is being created to run
 	editing       string       // the node an attribute prompt was opened on
 	count         string       // the count prefix typed so far, applied to the next motion
+	// repeat is the count the action about to run was asked for, already
+	// parsed. Only the motions read it; every other action ignores it, and the
+	// next key overwrites it.
+	repeat int
+	// chord is the keys of a binding pressed so far, held while they can only
+	// be the start of a longer one. Empty is the ordinary state — the map is
+	// waiting for a whole binding, not part of one.
+	chord []string
 	// selection is the nodes v has gathered (§7.3), by id, in the order they
 	// were gathered. Empty is the map's ordinary state: the node under the
 	// cursor is then the selection, and every bulk action falls back to it.
@@ -89,7 +102,6 @@ type Model struct {
 	palette    []entry  // what the palette is offering, built when it opened
 	candidates []string // the sessions the adoption picker is offering
 	choice     int      // which of them is under the picker's own cursor
-	awaitZ     bool     // the first z of zz has been pressed
 	handoff    string   // the node the terminal is out at, so Enter is spoken for
 
 	// The peek: a snapshot of one node's output, read full-screen (§7.3). It
@@ -98,6 +110,11 @@ type Model struct {
 	peeking string   // the node whose output is on screen
 	peeked  []string // the snapshot taken of it
 	peekTop int      // the line of it the screen starts at
+
+	// helpTop is the line of the help overlay the screen starts at (§7.3). The
+	// overlay itself is generated on every frame from the live keymap, so there
+	// is nothing to hold but where in it you are.
+	helpTop int
 
 	// dead is the nodes tmux has no session for (§9.2). It is derived on every
 	// reconciliation pass and never written to disk — see
@@ -127,13 +144,23 @@ type Model struct {
 	polled bool
 }
 
-func New(cfg config.Config, ws state.Workspace, stateDir string, sessions Sessions) Model {
+// New resolves the keymap and builds the map view on it. A keymap that does not
+// work is a failure here rather than a surprise later: an unknown action or a
+// key bound twice is reported before Bubble Tea owns the terminal, naming what
+// is wrong, and the alternative — falling back to the defaults — would leave a
+// user looking at a map whose keys are not the ones in the file they just
+// edited (§10).
+func New(cfg config.Config, ws state.Workspace, stateDir string, sessions Sessions) (Model, error) {
+	keys, err := NewKeymap(cfg.Keymap)
+	if err != nil {
+		return Model{}, err
+	}
 	// Built here, and not on the first note drawn, because choosing the
 	// markdown style asks the terminal what colour it is — a question that has
 	// to be put before Bubble Tea owns the terminal, or the answer comes back
 	// as keystrokes on a screen already being painted.
 	noteMarkdown()
-	return Model{cfg: cfg, ws: ws, stateDir: stateDir, statusDir: status.DirBeside(stateDir), sessions: sessions}
+	return Model{cfg: cfg, keys: keys, ws: ws, stateDir: stateDir, statusDir: status.DirBeside(stateDir), sessions: sessions}, nil
 }
 
 // Init starts the two things that keep previews current: the control-mode
@@ -178,7 +205,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A resize re-windows an open peek as well as the map: a snapshot is
 		// not taken again when the terminal changes shape, only shown through a
 		// window of a different size.
-		shown := m.follow().clampPeek()
+		// The overlay is re-windowed too: a taller terminal shows more of the
+		// list, so the line it starts at has a lower ceiling than it had.
+		shown := m.follow().clampPeek().clampHelp()
 		next, cmd := shown.markDirty(shown.visible()...)
 		return next, cmd
 
@@ -223,6 +252,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateAgent(msg)
 		case modeAgentCmd:
 			return m.updateAgentCmd(msg)
+		case modeHelp:
+			return m.updateHelp(msg)
 		}
 		return m.updateNormal(msg)
 	}
@@ -237,101 +268,13 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateHeld(msg)
 	}
 	m.status = ""
-	// motion is asked first and its model kept either way: a key it does not
-	// take is still a key that ends a half-typed count.
-	looking := m.ws.Viewport.Offset
-	m, handled := m.motion(msg.String())
-	if handled {
-		// Cards that have never been captured, and — if the viewport itself
-		// moved — every card now on screen: off screen is where activity events
-		// are dropped, so a card scrolled back to has been unwatched, whether or
-		// not it has a snapshot already. Moving the cursor without scrolling is
-		// not news about any session, so a map merely being navigated does not
-		// keep asking tmux the same question.
-		stale := m.unpreviewed()
-		if m.ws.Viewport.Offset != looking {
-			stale = m.visible()
-		}
-		next, cmd := m.markDirty(stale...)
-		return next, cmd
+	key := msg.String()
+	// Counts are read before the keymap and are not part of it: a digit is a
+	// digit on every map, so 3l is three presses of l whatever l is bound to.
+	if counted, ok := m.countPrefix(key); ok {
+		return counted, nil
 	}
-	switch msg.String() {
-	case "enter":
-		// A note has no session; Enter opens its body in $EDITOR instead, by the
-		// same release-the-terminal mechanism (§6).
-		if node, ok := m.selected(); ok && node.Kind == state.KindNote {
-			return m.editNote(node)
-		}
-		return m.attach()
-	case "q":
-		if m.cfg.General.ConfirmQuit {
-			m.mode = modeConfirmQuit
-			return m, nil
-		}
-		// Quitting Trigpoint kills nothing: every session outlives it (§5.2).
-		return m, tea.Quit
-	case "n":
-		m.mode, m.input, m.creating = modeTitle, "", state.KindShell
-	case "N":
-		m.mode, m.input, m.creating = modeTitle, "", state.KindNote
-	case "a":
-		return m.openAgents()
-	case "A":
-		// The picker opens on tmux's answer rather than on the keystroke: the
-		// question is a subprocess, and a map that froze on it would freeze on
-		// the one thing adoption is for — a server with a great many sessions.
-		return m, m.adoptable()
-	case " ":
-		// Peek: the node's output, read without being given the keyboard
-		// (§7.3).
-		return m.peek()
-	case "u":
-		return m.jumpAttention()
-	case "r":
-		return m.editAttr(modeRename, func(n state.Node) string { return n.Title })
-	case "t":
-		if len(m.selection) > 0 {
-			return m.openBulkTags()
-		}
-		return m.editAttr(modeTags, func(n state.Node) string { return strings.Join(n.Tags, " ") })
-	case "v":
-		return m.toggleSelect()
-	case "V":
-		return m.hold()
-	case "g":
-		return m.group()
-	case "c":
-		return m.cycleColour()
-	case "C":
-		return m.openColours()
-	case "s":
-		return m.cycleSize()
-	case "tab":
-		return m.cycleWorkspace(1)
-	case "shift+tab":
-		return m.cycleWorkspace(-1)
-	case "w":
-		return m.openWorkspaces()
-	case "/":
-		return m.openFilter()
-	case "ctrl+k", ":":
-		return m.openPalette()
-	case "esc":
-		// Esc has two things to clear and one key. The selection goes first: it
-		// is the newer of the two, and the filter is still there to Esc again.
-		if next, cleared := m.clearSelection(); cleared {
-			return next, nil
-		}
-		return m.clearFilter()
-	case "x":
-		// The targets are fixed here rather than read again at y, because a
-		// create landing while the prompt is up moves the cursor onto the new
-		// node — and the user would then confirm one kill and get another.
-		if ids := m.targets(); len(ids) > 0 {
-			m.mode, m.killing = modeConfirmKill, ids
-		}
-	}
-	return m, nil
+	return m.dispatch(key)
 }
 
 func (m Model) updateConfirmQuit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -358,6 +301,8 @@ func (m Model) View() string {
 		content = m.peekView()
 	case modePalette:
 		content = m.paletteView()
+	case modeHelp:
+		content = m.helpView()
 	}
 	body := lipgloss.NewStyle().MaxWidth(m.width).MaxHeight(m.height - 1).Render(content)
 	return lipgloss.JoinVertical(lipgloss.Left, body, m.statusBar())
@@ -366,11 +311,39 @@ func (m Model) View() string {
 func (m Model) mapView() string {
 	switch {
 	case len(m.ws.Nodes) == 0:
-		return hintStyle.Render("The map is empty. Press n for a shell node, a for an agent, N for a note.")
+		return hintStyle.Render(m.emptyHint())
 	case len(m.filtered()) == 0:
-		return hintStyle.Render("No card matches /" + flatten(m.filter) + ". Press esc to clear the filter.")
+		return hintStyle.Render("No card matches /" + flatten(m.filter) + ". " + m.clearHint())
 	}
 	return m.cards()
+}
+
+// emptyHint and clearHint are the two screens with no card on them to read a
+// key off, which makes them the two that most have to name the right one. Both
+// are built from the live keymap for the same reason the overlay is: a hint
+// naming a key that has been rebound is worse than no hint (§7.3).
+func (m Model) emptyHint() string {
+	offers := make([]string, 0, 3)
+	for _, o := range []struct{ action, what string }{
+		{"new_shell", "a shell node"},
+		{"new_agent", "an agent"},
+		{"new_note", "a note"},
+	} {
+		if keys := m.keys.hintKeys(o.action); keys != "" {
+			offers = append(offers, keys+" for "+o.what)
+		}
+	}
+	if len(offers) == 0 {
+		return "The map is empty. Nothing is bound to make a node; the palette still is."
+	}
+	return "The map is empty. Press " + strings.Join(offers, ", ") + "."
+}
+
+func (m Model) clearHint() string {
+	if keys := m.keys.hintKeys("clear"); keys != "" {
+		return "Press " + keys + " to clear the filter."
+	}
+	return "Clearing the filter is bound to nothing; the palette still does it."
 }
 
 func (m Model) statusBar() string {
@@ -383,6 +356,8 @@ func (m Model) statusBar() string {
 		return m.bar(statusStyle, m.peekBar())
 	case m.mode == modePalette:
 		return m.bar(statusStyle, m.paletteBar())
+	case m.mode == modeHelp:
+		return m.bar(statusStyle, m.helpBar())
 	case m.mode == modeFilter:
 		return m.bar(statusStyle, "Filter: "+flatten(m.input)+"▏")
 	case m.mode == modeConfirmQuit:
@@ -444,7 +419,7 @@ func (m Model) statusBar() string {
 	case m.holding != "":
 		// The keys a held group answers are not the keys the map answers, so
 		// they are on the bar for as long as it is held.
-		return m.bar(statusStyle, fmt.Sprintf("Group %s · %s", flatten(m.heldTitle()), heldHints))
+		return m.bar(statusStyle, fmt.Sprintf("Group %s · %s", flatten(m.heldTitle()), heldKeys.hints()))
 	}
 
 	left := fmt.Sprintf("%s · %s", m.ws.Name, pluralise(len(m.ws.Nodes), "node"))
@@ -471,9 +446,9 @@ func (m Model) statusBar() string {
 	}
 	// TrimSuffix for the terminal with room for the count and not one hint: a
 	// separator with nothing after it reads as something that failed to render.
-	hints := selectionHints
+	hints := selectionKeys.hints()
 	if len(m.selection) == 0 {
-		hints = fitHints(m.width - lipgloss.Width(left) - lipgloss.Width(prefix) - barPadding - 1)
+		hints = m.fitHints(m.width - lipgloss.Width(left) - lipgloss.Width(prefix) - barPadding - 1)
 	}
 	right := strings.TrimSuffix(prefix+hints, " · ")
 
@@ -488,15 +463,19 @@ func (m Model) statusBar() string {
 // the commands' own (§7.2), in the order the command table gives them up: a
 // terminal too narrow for all of them loses them from the end, rather than
 // losing the lot the moment one does not fit.
-func fitHints(width int) string {
+//
+// The key each hint names is the key it is actually bound to, so a remap moves
+// the hint with it — and an action bound to nothing has no hint to give.
+func (m Model) fitHints(width int) string {
 	var kept strings.Builder
 	for _, c := range commands {
-		if c.hint == "" {
+		keys := m.keys.hintKeys(c.name)
+		if c.hint == "" || keys == "" {
 			continue
 		}
-		next := c.hint
+		next := keys + " " + c.hint
 		if kept.Len() > 0 {
-			next = " · " + c.hint
+			next = " · " + next
 		}
 		if lipgloss.Width(kept.String())+lipgloss.Width(next) > width {
 			break

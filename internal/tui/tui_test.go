@@ -10,9 +10,23 @@ import (
 	"github.com/MatrixMagician/Trigpoint/internal/state"
 )
 
+// mustNew builds a map view on a keymap that is expected to resolve, which is
+// every test but the ones about keymaps that do not.
+func mustNew(t *testing.T, cfg config.Config, ws state.Workspace, stateDir string, sessions Sessions) Model {
+	t.Helper()
+	m, err := New(cfg, ws, stateDir, sessions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
 func newModel(t *testing.T, cfg config.Config, ws state.Workspace) Model {
 	t.Helper()
-	m := New(cfg, ws, t.TempDir(), &fakeSessions{})
+	m, err := New(cfg, ws, t.TempDir(), &fakeSessions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	return sized.(Model)
 }
@@ -78,7 +92,10 @@ func TestConfirmQuitAsksFirst(t *testing.T) {
 }
 
 func TestViewFitsTheTerminal(t *testing.T) {
-	m := New(config.Default(), state.Workspace{Name: "main"}, t.TempDir(), &fakeSessions{})
+	m, err := New(config.Default(), state.Workspace{Name: "main"}, t.TempDir(), &fakeSessions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
 	lines := strings.Split(sized.(Model).View(), "\n")
 
@@ -93,7 +110,7 @@ func TestViewFitsTheTerminal(t *testing.T) {
 }
 
 func TestViewBeforeFirstWindowSizeDoesNotPanic(t *testing.T) {
-	_ = New(config.Default(), state.Workspace{Name: "main"}, t.TempDir(), &fakeSessions{}).View()
+	_ = mustNew(t, config.Default(), state.Workspace{Name: "main"}, t.TempDir(), &fakeSessions{}).View()
 }
 
 func isQuit(cmd tea.Cmd) bool {
@@ -119,7 +136,10 @@ func stripANSI(s string) string {
 }
 
 func TestViewSurvivesAVeryNarrowTerminal(t *testing.T) {
-	m := New(config.Default(), state.Workspace{Name: "a-long-workspace-name"}, t.TempDir(), &fakeSessions{})
+	m, err := New(config.Default(), state.Workspace{Name: "a-long-workspace-name"}, t.TempDir(), &fakeSessions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 12, Height: 4})
 	for i, line := range strings.Split(sized.(Model).View(), "\n") {
 		if n := len([]rune(stripANSI(line))); n > 12 {
@@ -153,7 +173,10 @@ func TestTheStatusBarIsAlwaysExactlyOneLine(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			m := New(config.Default(), tc.ws, t.TempDir(), &fakeSessions{})
+			m, err := New(config.Default(), tc.ws, t.TempDir(), &fakeSessions{})
+			if err != nil {
+				t.Fatal(err)
+			}
 			sized, _ := m.Update(tea.WindowSizeMsg{Width: tc.width, Height: tc.height})
 			view := sized.(Model)
 			view.status, view.mode, view.input, view.killing = tc.status, tc.mode, long, tc.killing

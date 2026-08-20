@@ -8,65 +8,20 @@ import (
 
 // The map is an infinite cell grid, so every motion is one step in one of four
 // directions — what changes is whether the step moves the cursor or the node
-// under it.
-var (
-	cursorMotions = map[string]state.Cell{
-		"h": {Col: -1}, "left": {Col: -1},
-		"l": {Col: 1}, "right": {Col: 1},
-		"k": {Row: -1}, "up": {Row: -1},
-		"j": {Row: 1}, "down": {Row: 1},
-	}
-	nodeMotions = map[string]state.Cell{
-		"H": {Col: -1}, "L": {Col: 1}, "K": {Row: -1}, "J": {Row: 1},
-	}
-)
+// under it. Which key asks for which is the keymap's business (keymap.go); this
+// is what the four directions do.
+//
+// nodeMotions survives as a map because a held group reads it directly: HJKL
+// move a rectangle rather than a card, and those keys are one context down from
+// the map's own and are not remappable (§7.3).
+var nodeMotions = map[string]state.Cell{
+	"H": {Col: -1}, "L": {Col: 1}, "K": {Row: -1}, "J": {Row: 1},
+}
 
 // maxCountDigits bounds a count prefix. A node move repeats the collision rule
 // once per step, so an accidental leant-on digit key must not be able to ask
 // for a billion of them.
 const maxCountDigits = 3
-
-// motion handles the keys that move the cursor, the selected node, or the
-// viewport, and reports whether it took the key. Count prefixes and the z of zz
-// are consumed here too, so that pressing 3 and then anything else forgets the
-// 3 rather than applying it to whatever came next.
-func (m Model) motion(key string) (Model, bool) {
-	count, awaitZ := m.count, m.awaitZ
-	m.count, m.awaitZ = "", false
-	was := m.ws.Viewport
-
-	switch {
-	case len(key) == 1 && key[0] >= '1' && key[0] <= '9',
-		key == "0" && count != "":
-		if len(count) < maxCountDigits {
-			m.count = count + key
-		} else {
-			m.count = count // an over-long count keeps what it had rather than resetting
-		}
-		return m, true
-
-	case key == "0":
-		// Origin, centred: jumping somewhere and landing in the corner of the
-		// screen hides the half of the map you jumped towards.
-		m.ws.Viewport.Cursor = state.Cell{}
-		return m.centre().savedIfMoved(was), true
-
-	case key == "z":
-		if !awaitZ {
-			m.awaitZ = true
-			return m, true
-		}
-		return m.centre().savedIfMoved(was), true
-	}
-
-	if d, ok := cursorMotions[key]; ok {
-		return m.moveCursor(d, repeat(count)).savedIfMoved(was), true
-	}
-	if d, ok := nodeMotions[key]; ok {
-		return m.moveNode(d, repeat(count)).savedIfMoved(was), true
-	}
-	return m, false
-}
 
 // savedIfMoved persists the map only when the motion actually went somewhere.
 // h at the left edge of the map moves nothing, and nothing moved should not

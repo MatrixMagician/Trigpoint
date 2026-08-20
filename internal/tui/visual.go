@@ -201,8 +201,18 @@ func editTags(tags, add, drop []string) []string {
 	return kept
 }
 
-// selectionHints are the status bar's contextual hints while a selection is
-// gathered (§7.1). They replace the general ones rather than joining them: the
-// keys that mean something different with several nodes gathered are the ones
-// worth the width.
-const selectionHints = "HJKL move · g group · t tags · x kill · esc clear"
+// selectionKeys are the keys that mean something different with several nodes
+// gathered (§7.1). The status bar renders them in place of its general hints —
+// they are the ones worth the width — and the help overlay renders the same
+// table at length, so the two cannot say different things.
+var selectionKeys = contextKeys{
+	title: "Selection",
+	when:  "while v has gathered nodes",
+	keys: []keyHint{
+		{"HJKL", "move", "Move every gathered node together, shoving whatever is in the way"},
+		{"g", "group", "Make a group of them, gathering them together first"},
+		{"t", "tags", "Edit the tags on all of them (tag adds, -tag removes)"},
+		{"x", "kill", "Kill all of them, on one confirmation"},
+		{"esc", "clear", "Let the selection go"},
+	},
+}

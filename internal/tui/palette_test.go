@@ -12,24 +12,27 @@ import (
 // bindings is every key the map answers to (§7.3). The palette is the
 // discoverability backstop, so an action reachable only by its binding is a
 // bug — this is the list that says so.
+//
+// Ctrl-K and : are deliberately absent: they open the palette, which is no way
+// to reach anything from inside it.
 var bindings = []string{
 	"enter", " ", "n", "N", "A", "x", "q", "r", "c", "C", "t", "s",
-	"tab", "shift+tab", "w", "/", "esc", "v", "g",
-	"h", "j", "k", "l", "H", "J", "K", "L", "0", "z",
+	"tab", "shift+tab", "w", "/", "esc", "v", "g", "?",
+	"h", "j", "k", "l", "H", "J", "K", "L", "0", "z z",
 }
 
 func TestEveryBindingHasAPaletteEntry(t *testing.T) {
-	offered, labels := map[string]bool{}, map[string]bool{}
+	km, err := NewKeymap(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	offered := map[string]bool{}
 	for _, c := range commands {
-		if c.label == "" {
-			t.Errorf("the command bound to %v has no name, so the palette cannot offer it", c.keys)
+		if c.hidden {
+			continue
 		}
-		if labels[c.label] {
-			t.Errorf("two commands are called %q", c.label)
-		}
-		labels[c.label] = true
-		for _, k := range c.keys {
-			offered[k] = true
+		for _, alt := range km.alts[c.name] {
+			offered[strings.Join(alt, " ")] = true
 		}
 	}
 	for _, key := range bindings {

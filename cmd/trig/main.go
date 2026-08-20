@@ -114,7 +114,14 @@ flags:
 		return err
 	}
 
-	_, err = tea.NewProgram(tui.New(cfg, ws, stateDir, tmuxCLI()), tea.WithAltScreen()).Run()
+	// The keymap is resolved before the terminal is taken, so a config that
+	// binds a key twice is a message on stderr rather than a key that quietly
+	// does nothing (§10).
+	model, err := tui.New(cfg, ws, stateDir, tmuxCLI())
+	if err != nil {
+		return err
+	}
+	_, err = tea.NewProgram(model, tea.WithAltScreen()).Run()
 	return err
 }
 
@@ -147,12 +154,33 @@ func runDoctor(args []string) error {
 		return err
 	}
 
-	results := doctor.Run(cfgPath, stateDir, claudeSettings)
+	results := append(doctor.Run(cfgPath, stateDir, claudeSettings), checkKeymap(cfgPath))
 	fmt.Print(doctor.Format(results))
 	if !doctor.OK(results) {
 		return fmt.Errorf("doctor found problems; Trigpoint will not run correctly until they are fixed")
 	}
 	return nil
+}
+
+// checkKeymap asks the question the map asks at startup: does [keymap] resolve?
+// A keymap that does not is a map that will not open, so doctor says which
+// binding is wrong rather than passing a config Trigpoint is about to refuse.
+//
+// It lives here rather than in internal/doctor because the actions it validates
+// against are the map view's own, and a diagnostic that draws nothing should not
+// be the reason internal/doctor depends on a package full of rendering.
+func checkKeymap(path string) doctor.Result {
+	const name = "keymap"
+	cfg, err := config.Load(path)
+	if err != nil {
+		// The config check has already said so, in its own words; repeating it
+		// under a second heading would read as two problems.
+		return doctor.Result{Name: name, OK: true, Detail: "not checked: the config did not load"}
+	}
+	if _, err := tui.NewKeymap(cfg.Keymap); err != nil {
+		return doctor.Result{Name: name, Detail: err.Error()}
+	}
+	return doctor.Result{Name: name, OK: true, Detail: "every binding resolves"}
 }
 
 // runEmitStatus is the agent side of the status contract (SPEC §8): an agent —

@@ -27,7 +27,10 @@ func TestAnAgentSessionOutlivesItsAgent(t *testing.T) {
 	cfg := config.Default()
 	// A preset that is over before it starts, which is the case this is about.
 	cfg.Agents = map[string]config.Agent{"quick": {Cmd: "echo agent-ran"}}
-	m := New(cfg, state.Workspace{Name: "main", Dir: t.TempDir()}, t.TempDir(), cli)
+	m, err := New(cfg, state.Workspace{Name: "main", Dir: t.TempDir()}, t.TempDir(), cli)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = sized.(Model)
 
@@ -82,7 +85,10 @@ func TestAnAgentReportsFromInsideItsOwnSession(t *testing.T) {
 		Cmd: `printf '{"state":"needs_you","detail":"from the pane"}' > "$TRIG_STATUS_FILE"`,
 	}}
 	stateDir := t.TempDir()
-	m := New(cfg, state.Workspace{Name: "main", Dir: t.TempDir()}, stateDir, cli)
+	m, err := New(cfg, state.Workspace{Name: "main", Dir: t.TempDir()}, stateDir, cli)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = sized.(Model)
 
