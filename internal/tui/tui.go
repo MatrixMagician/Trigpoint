@@ -124,10 +124,25 @@ type Model struct {
 	// between reconciliation passes. A pass carries the count it was sent with,
 	// so an answer that predates a correction is dropped rather than applied.
 	corrections int
+	// applied is the number of the newest reconciliation pass this map has
+	// answered to — including one whose verdict the corrections guard then
+	// refused, since an older answer is no more current for it. A pass numbered
+	// below it is one a later pass has already seen past, and is dropped.
+	//
+	// It is deliberately not reset when the map switches workspace: the numbers
+	// come from a process-wide sequence, and keeping the watermark is what
+	// drops a pass left in flight by a map that has been switched away from and
+	// back to, which the workspace stamp alone cannot tell from a current one.
+	applied uint64
 
 	previews map[string][]string // the last snapshot taken of each node, by id
 	dirty    map[string]bool     // the cards whose snapshot has been overtaken
 	settling bool                // a debounce is running, so dirty cards have a tick coming
+	// captured is the number of the newest batch of snapshots folded in, for
+	// the same reason applied exists: two batches can be in flight at once, and
+	// an older one landing last would show a card output it has already moved
+	// past.
+	captured uint64
 	// unread is the cards output has arrived on since you last looked at them
 	// (§8). Attention, not work: it is set by activity and cleared by looking,
 	// and it is never persisted — a mark that survived a restart would be one

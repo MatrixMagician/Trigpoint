@@ -51,6 +51,19 @@ the map dead. Passes also carry the number of corrections the map had made when 
 sent, so an answer that predates an attach finding a session gone, or a respawn bringing one
 back, is dropped rather than applied.
 
+Passes are numbered as well as stamped, because the corrections count answers a different
+question. Passes are spawned freely — the slow tick, every change to the session list,
+opening a map — so two are routinely in flight at once, and with no correction between them
+they carry the same count and the last to *answer* wins, however long ago it *asked*. Each
+pass therefore takes a number from a process-wide sequence, and the map keeps the number of
+the newest it has answered to; an older one's verdict is dropped. Both guards have to hold.
+The sequence is process-wide rather than a field on the model because a `Model` is copied by
+value all over Bubble Tea and the copy that asks is not the copy that applies — which is why
+it also survives a workspace switch, where it closes an A→B→A gap that the workspace stamp on
+its own would miss. Only the verdict is ordered this way: reconstructed orphans are applied
+whatever a pass's number, because a session that was there when the pass ran is not un-found
+by anything that happened after it.
+
 Respawn keeps the node's id, and therefore its session name. Reconciliation matches sessions
 to nodes by `trig_<workspace>_<nodeID>`, so a respawn that minted a new id would leave the
 old card orphaned and the new session unrecognised.
