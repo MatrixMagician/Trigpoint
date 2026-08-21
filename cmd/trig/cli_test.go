@@ -533,3 +533,31 @@ func TestAttachPicksOnTheTitleAndNotTheKindOrTags(t *testing.T) {
 		t.Error("a kind names several nodes by design and should not pick one")
 	}
 }
+
+func TestNewLeavesTheCursorOnTheNodeItMade(t *testing.T) {
+	c := newCLI(t)
+
+	for _, title := range []string{"one", "two", "three"} {
+		c.mustRun(t, "new", "-t", title)
+
+		ws := c.workspace(t, "main")
+		made := ws.Nodes[len(ws.Nodes)-1]
+		if ws.Viewport.Cursor != made.Pos {
+			t.Fatalf("after creating %q the cursor is at %+v, want the node's cell %+v: the map opens where the cursor is, so a node the cursor is not on is a node the map does not show",
+				title, ws.Viewport.Cursor, made.Pos)
+		}
+	}
+}
+
+func TestNewDoesNotDisturbTheCursorOfAWorkspaceItWasNotAskedAbout(t *testing.T) {
+	c := newCLI(t)
+
+	c.mustRun(t, "new", "-t", "here")
+	before := c.workspace(t, "main").Viewport
+
+	c.mustRun(t, "new", "-w", "other", "-t", "elsewhere")
+
+	if after := c.workspace(t, "main").Viewport; after != before {
+		t.Errorf("main's viewport moved from %+v to %+v", before, after)
+	}
+}
