@@ -37,6 +37,7 @@ const (
 	modeTags
 	modeBulkTags
 	modeGroupTitle
+	modeGroupRename
 	modeColour
 	modeWorkspace
 	modeNewWorkspace
@@ -249,6 +250,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateBulkTags(msg)
 		case modeGroupTitle:
 			return m.updateGroupTitle(msg)
+		case modeGroupRename:
+			return m.updateGroupRename(msg)
 		case modeColour:
 			return m.updateColour(msg)
 		case modeWorkspace:
@@ -383,6 +386,8 @@ func (m Model) statusBar() string {
 		return m.bar(statusStyle, "Rename: "+flatten(m.input)+"▏")
 	case m.mode == modeTags:
 		return m.bar(statusStyle, "Tags: "+flatten(m.input)+"▏")
+	case m.mode == modeGroupRename:
+		return m.bar(statusStyle, "Group name: "+flatten(m.input)+"▏")
 	case m.mode == modeGroupTitle:
 		return m.bar(statusStyle, fmt.Sprintf("Group %s: %s▏",
 			pluralise(len(m.grouping), "node"), flatten(m.input)))
