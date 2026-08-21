@@ -239,7 +239,7 @@ Modal, vim-flavoured. No leader key for core motions; count prefixes supported (
 | `c` | Cycle colour · `C` colour picker |
 | `t` | Edit tags |
 | `s` | Cycle card size S→M→L |
-| `x` | Kill node (confirm; `x` on dead node = remove card) |
+| `x` | Kill node (confirm; a note, having no session, is removed rather than killed) |
 | `g` | Group: create from selection (**gathers** members together first) / add to group under cursor (grows the rect if no cell is free) |
 | `v` | Visual select (multi-node: move, group, tag, kill in bulk) |
 | `V` | Hold the group under the cursor: `H J K L` move it rigidly, `h j k l` resize it, `x` deletes it (nodes survive), `Esc` lets go |
