@@ -15,7 +15,7 @@ import (
 // are both rendered from now, and a table edited without meaning to would show
 // up here rather than on somebody's status bar.
 const (
-	selectionHints = "HJKL move · g group · t tags · x kill · esc clear"
+	selectionHints = "HJKL move · g group · t tags · c colour · C pick · s size · x kill · esc clear"
 	heldHints      = "HJKL move · hjkl resize · x delete · esc done"
 )
 

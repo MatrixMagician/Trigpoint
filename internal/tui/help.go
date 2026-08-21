@@ -46,6 +46,24 @@ func (c contextKeys) hints() string {
 	return strings.Join(shown, " · ")
 }
 
+// fit is as many of them as width has room for, losing them from the end the
+// way the map's own hints do — rather than losing the lot the moment one does
+// not fit, which is what a bar too narrow for the whole table did.
+func (c contextKeys) fit(width int) string {
+	var kept strings.Builder
+	for _, k := range c.keys {
+		next := k.keys + " " + k.short
+		if kept.Len() > 0 {
+			next = " · " + next
+		}
+		if lipgloss.Width(kept.String())+lipgloss.Width(next) > width {
+			break
+		}
+		kept.WriteString(next)
+	}
+	return kept.String()
+}
+
 // contexts is every modal context the overlay covers, in the order a user meets
 // them: what the map does with several nodes gathered, what it does with a
 // group in hand, and then the three screens that take the keyboard for

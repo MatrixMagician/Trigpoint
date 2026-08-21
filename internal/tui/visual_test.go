@@ -494,3 +494,20 @@ func TestWithNoSelectionTheAttributeKeysActOnTheCursorAlone(t *testing.T) {
 		}
 	}
 }
+
+// The selection's hints are not fitted to the width the way the map's own are,
+// so a table long enough to overflow an eighty-column bar would take every hint
+// off it at once rather than the last of them.
+func TestTheSelectionHintsAreCutToFitRatherThanDroppedWholesale(t *testing.T) {
+	m, _ := visualMap(t)
+	m = pressKeys(t, m, "v", "l")
+
+	if !strings.Contains(m.View(), "HJKL move") {
+		t.Errorf("the bar should keep the hints it has room for, got:\n%s", m.View())
+	}
+	for _, line := range strings.Split(m.View(), "\n") {
+		if lipgloss.Width(line) > 80 {
+			t.Errorf("a line is %d columns wide in an eighty-column terminal: %q", lipgloss.Width(line), line)
+		}
+	}
+}

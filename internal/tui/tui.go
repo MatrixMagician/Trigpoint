@@ -461,9 +461,10 @@ func (m Model) statusBar() string {
 	}
 	// TrimSuffix for the terminal with room for the count and not one hint: a
 	// separator with nothing after it reads as something that failed to render.
-	hints := selectionKeys.hints()
+	room := m.width - lipgloss.Width(left) - lipgloss.Width(prefix) - barPadding - 1
+	hints := selectionKeys.fit(room)
 	if len(m.selection) == 0 {
-		hints = m.fitHints(m.width - lipgloss.Width(left) - lipgloss.Width(prefix) - barPadding - 1)
+		hints = m.fitHints(room)
 	}
 	right := strings.TrimSuffix(prefix+hints, " · ")
 
