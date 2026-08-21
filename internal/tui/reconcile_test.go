@@ -217,13 +217,16 @@ func TestARespawnThatFailsIsReportedAndTheNodeStaysDead(t *testing.T) {
 	}
 }
 
-func TestXOnADeadNodeRemovesItWithoutOfferingToKillASession(t *testing.T) {
+func TestXOnADeadNodeOffersToKillItsSessionAndRemovesTheCard(t *testing.T) {
 	m, _ := mapWithADeadNode(t)
 	m = moveTo(t, m, state.Cell{Col: 1, Row: 0})
 
 	m, _ = typeKeys(t, m, "x")
-	if view := m.View(); strings.Contains(view, "Kill") {
-		t.Errorf("there is no session to kill, so the prompt should not offer to, got:\n%s", view)
+	// The prompt matches what y does. A card the map believes dead is killed
+	// like any other, because the belief is a derived cache that can be wrong
+	// — the case the next test covers.
+	if view := m.View(); !strings.Contains(view, "Kill") {
+		t.Errorf("the prompt should say the session will be killed, got:\n%s", view)
 	}
 	m, cmd := typeKeys(t, m, "y")
 	m = settle(t, m, cmd)

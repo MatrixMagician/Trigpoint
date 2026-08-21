@@ -147,7 +147,7 @@ What is bound today:
 | `t` | Edit its tags — space-separated, several to a node. With a selection gathered, `tag` adds to every selected node and `-tag` removes |
 | `s` | Cycle its card size, small → medium → large |
 | `A` | Adopt a tmux session Trigpoint did not create — `j`/`k` to choose, `Enter` to adopt |
-| `x` | Kill the node under the cursor and its session (asks first; a note or a dead node is just removed). With a selection gathered, one confirmation names the count and kills all of them |
+| `x` | Kill the node under the cursor and its session (asks first; a note, which has no session, is just removed). With a selection gathered, one confirmation names the count and kills all of them |
 | `v` | Visual select — gather the node under the cursor, or let go of one already gathered. The motion keys then extend the selection, and `H J K L`, `g`, `t`, and `x` act on all of it at once; `Esc` clears it |
 | `g` | Group — gathers the selection together and draws a named rectangle round it. With the cursor already inside a group, adds the selection to that one instead |
 | `V` | Hold the group under the cursor. While one is held, `H J K L` move the whole rectangle and everything inside it, `h j k l` move its far edge, `x` deletes it, `Esc` lets go |
@@ -315,8 +315,10 @@ is: name, colour, tags, and position, so the map does not rearrange itself after
 `Enter` on a dead node offers to respawn it: a fresh session in the node's own working
 directory, falling back to the workspace's, re-running its command if it has one. The node
 keeps its id, so it keeps its session name too — respawning is not creating a new node. `x`
-on a dead node asks to remove the card rather than to kill anything, because there is nothing
-left to kill.
+on a dead node asks to kill it and its session, the same as on a live one. The dead mark is
+what the last pass saw, and a session restarted outside Trigpoint since then would be
+abandoned by a card that removed itself; asking tmux to kill a session that really is gone
+costs one no-op subprocess.
 
 A session under the `trig_` prefix with no node behind it is reconstructed as a card, from
 the `TRIG_WORKSPACE` / `TRIG_NODE_ID` / `TRIG_NODE_KIND` that every session Trigpoint starts
