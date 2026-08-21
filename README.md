@@ -26,10 +26,26 @@ rest of the spec does not exist yet.
 
 ## Requirements
 
+- Linux, x86-64 or arm64. macOS is deferred; see
+  [ADR 0019](docs/adr/0019-v1-ships-linux-only.md)
 - tmux 3.2 or newer (control mode, `capture-pane -e`, session environment)
-- Go 1.26 or newer, to build
+- Go 1.26 or newer, only to build it yourself
 
 ## Install
+
+Download the binary for your architecture from the
+[latest release](https://github.com/MatrixMagician/Trigpoint/releases/latest). It is static
+and depends on nothing but tmux, so there is no toolchain to install:
+
+```sh
+tar xzf trig_<version>_linux_amd64.tar.gz
+sudo install trig_<version>_linux_amd64/trig /usr/local/bin/trig
+```
+
+Each release also carries a `SHA256SUMS`, which `sha256sum --check SHA256SUMS` verifies
+against the tarballs you downloaded.
+
+With a Go toolchain:
 
 ```sh
 go install github.com/MatrixMagician/Trigpoint/cmd/trig@latest
@@ -633,6 +649,23 @@ terminals have not been tried yet.
 
 Before changing anything, read [`CONTEXT.md`](CONTEXT.md) for the vocabulary the code and
 the issues use, and [`docs/adr/`](docs/adr) for the decisions already taken.
+
+### Releasing
+
+Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml),
+which vets, tests, and then builds the artifacts with
+[`scripts/build-release.sh`](scripts/build-release.sh) — the same script anyone can run, so a
+release is reproducible off a laptop rather than only inside CI:
+
+```sh
+scripts/build-release.sh v1.2.3      # dist/*.tar.gz and dist/SHA256SUMS
+scripts/check-release.sh dist        # runs the tarball's trig doctor on a clean machine
+```
+
+`check-release.sh` unpacks a built tarball in a container that has tmux and no Go toolchain
+and runs `trig doctor` in it, which is what "a downloaded binary works" has to mean. A
+foreign architecture needs `binfmt_misc` registered for it; without that the script says so
+rather than passing quietly.
 
 ## Licence
 
