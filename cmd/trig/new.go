@@ -124,6 +124,11 @@ flags:
 	}
 
 	ws.Nodes = append(ws.Nodes, node)
+	// The same move the map view makes when it places a card. The CLI is the
+	// one placement path with no viewport to follow the cell it just chose, so
+	// without this the map opens wherever the cursor was left and the node is
+	// off screen.
+	ws.Viewport.Cursor = node.Pos
 	if err := state.Save(stateDir, ws); err != nil {
 		return err
 	}
