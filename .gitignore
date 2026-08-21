@@ -33,3 +33,6 @@ go.work.sum
 
 # Locally built binary (README: `go build -o trig ./cmd/trig`)
 /trig
+
+# Release artifacts (scripts/build-release.sh)
+/dist/
