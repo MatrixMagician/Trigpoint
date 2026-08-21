@@ -14,19 +14,24 @@ and a real tmux, and [`docs/demo/record.sh`](docs/demo/record.sh) re-records it.
 
 ## Status
 
-Early. The map, its cursor, shell nodes, note cards, the attach handoff, live previews, peek,
-adopting sessions you already had, the four card attributes — name, colour, tags, size —
-several workspaces to switch between, and agent nodes reporting their own status work; the
-rest of the spec does not exist yet.
+v0.1.0, the first tagged release. Every v1 milestone is built: the map and its cursor, shell,
+agent and note nodes, the attach handoff, live previews, peek, adopting sessions you already
+had, the four card attributes (name, colour, tags, size), groups you can hold and move,
+filter and palette, several workspaces to switch between, agent nodes reporting their own
+status, a fully remappable keymap, and the `trig new`/`ls`/`attach` command line.
 
 | Milestone | | |
 | --- | --- | --- |
-| M0 | Skeleton — config, workspace store, `trig doctor` | done |
-| M1 | Nodes on a map — create/kill shell nodes, cursor and node movement, attach handoff | done |
-| M2 | Live map — previews, peek, dead nodes, reconciliation, adoption | done |
-| M3 | Organisation — colours, tags, sizes, workspaces, groups, filter, palette | in progress (group movement to come) |
-| M4 | Agents — agent nodes, status badges, attention jump, `trig init-hooks claude` | done |
-| M5 | Polish and release | in progress (`trig new`/`ls`/`attach` done) |
+| M0 | Skeleton, config, workspace store, `trig doctor` | done |
+| M1 | Nodes on a map, create and kill shell nodes, cursor and node movement, attach handoff | done |
+| M2 | Live map, previews, peek, dead nodes, reconciliation, adoption | done |
+| M3 | Organisation, colours, tags, sizes, workspaces, groups, filter, palette | done |
+| M4 | Agents, agent nodes, status badges, attention jump, `trig init-hooks claude` | done |
+| M5 | Polish and release, keymap remapping, `trig new`/`ls`/`attach`, docs, static builds, demo | done |
+
+Linux only for now. macOS is deferred and wezterm dropped; see
+[ADR 0019](docs/adr/0019-v1-ships-linux-only.md). Remote nodes over SSH are the v1.1
+candidate ([`SPEC.md`](SPEC.md) §13) and are deliberately not here.
 
 [`SPEC.md`](SPEC.md) is the whole design; this README describes only what is built.
 
