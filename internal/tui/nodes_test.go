@@ -618,3 +618,29 @@ func sign(n int) int {
 	}
 	return 0
 }
+
+// x on a dead node still routes through Kill, because the dead flag is a
+// derived cache that can be wrong. The prompt has to say so (#33).
+func TestTheKillPromptSaysWhatWillHappenToEachKindOfCard(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		node state.Node
+		dead bool
+		want string
+	}{
+		{"live", state.Node{ID: "k4f2", Kind: state.KindShell, Title: "api"}, false, "Kill api and its session?"},
+		{"dead", state.Node{ID: "k4f2", Kind: state.KindShell, Title: "api"}, true, "Kill api and its session?"},
+		{"note", state.Node{ID: "k4f2", Kind: state.KindNote, Title: "todo"}, false, "Remove todo?"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, _, _ := newNodeModel(t, state.Workspace{Name: "main", Nodes: []state.Node{tc.node}})
+			m.dead = map[string]bool{tc.node.ID: tc.dead}
+
+			m, _ = typeKeys(t, m, "x")
+
+			if !strings.Contains(m.View(), tc.want) {
+				t.Errorf("prompt should read %q, got:\n%s", tc.want, m.View())
+			}
+		})
+	}
+}

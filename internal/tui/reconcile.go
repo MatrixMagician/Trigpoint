@@ -126,7 +126,8 @@ func reconstruct(sessions Sessions, workspace, session string) (state.Node, bool
 		// moment it arrives, and that nothing but the user can clear.
 		return state.Node{}, false
 	}
-	if from := env["TRIG_WORKSPACE"]; from != "" && from != workspace {
+	from := env["TRIG_WORKSPACE"]
+	if from != "" && from != workspace {
 		// A workspace whose name starts with this one's, which is the only way
 		// the name check above can say yes about someone else's session. It is
 		// not this map's to show, and it is not an orphan either — the map that
@@ -137,9 +138,17 @@ func reconstruct(sessions Sessions, workspace, session string) (state.Node, bool
 	id := env["TRIG_NODE_ID"]
 	if id == "" || tmux.SessionName(workspace, id) != session {
 		// Nothing authoritative to go on, or an id that does not match the
-		// session it claims to name. The name is what is left, and for this
-		// workspace's own prefix it is unambiguous.
+		// session it claims to name. The name is what is left.
 		id = fromName
+	}
+	if from == "" && strings.Contains(id, "_") {
+		// Without TRIG_WORKSPACE nothing has said where trig_a_b_c divides, and
+		// a workspace name may contain "_" (state.ValidName), so main would
+		// read main_dev's session as its own node dev_x. A node id never
+		// contains "_" (state.newID), which makes the underscore the ambiguity
+		// showing: leave the session to the workspace whose split produces a
+		// real id, and which is the only one that can.
+		return state.Node{}, false
 	}
 
 	kind := state.Kind(env["TRIG_NODE_KIND"])

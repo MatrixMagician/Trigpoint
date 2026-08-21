@@ -26,10 +26,26 @@ rest of the spec does not exist yet.
 
 ## Requirements
 
+- Linux, x86-64 or arm64. macOS is deferred; see
+  [ADR 0019](docs/adr/0019-v1-ships-linux-only.md)
 - tmux 3.2 or newer (control mode, `capture-pane -e`, session environment)
-- Go 1.26 or newer, to build
+- Go 1.26 or newer, only to build it yourself
 
 ## Install
+
+Download the binary for your architecture from the
+[latest release](https://github.com/MatrixMagician/Trigpoint/releases/latest). It is static
+and depends on nothing but tmux, so there is no toolchain to install:
+
+```sh
+tar xzf trig_<version>_linux_amd64.tar.gz
+sudo install trig_<version>_linux_amd64/trig /usr/local/bin/trig
+```
+
+Each release also carries a `SHA256SUMS`, which `sha256sum --check SHA256SUMS` verifies
+against the tarballs you downloaded.
+
+With a Go toolchain:
 
 ```sh
 go install github.com/MatrixMagician/Trigpoint/cmd/trig@latest
@@ -147,9 +163,10 @@ What is bound today:
 | `t` | Edit its tags — space-separated, several to a node. With a selection gathered, `tag` adds to every selected node and `-tag` removes |
 | `s` | Cycle its card size, small → medium → large. With a selection gathered, every gathered card goes to the same size |
 | `A` | Adopt a tmux session Trigpoint did not create — `j`/`k` to choose, `Enter` to adopt |
-| `x` | Kill the node under the cursor and its session (asks first; a note or a dead node is just removed). With a selection gathered, one confirmation names the count and kills all of them |
+| `x` | Kill the node under the cursor and its session (asks first; a note, which has no session, is just removed). With a selection gathered, one confirmation names the count and kills all of them |
 | `v` | Visual select — gather the node under the cursor, or let go of one already gathered. The motion keys then extend the selection, and `H J K L`, `g`, `t`, `c`, `C`, `s`, and `x` act on all of it at once; `Esc` clears it |
 | `g` | Group — gathers the selection together and draws a named rectangle round it. With the cursor already inside a group, adds the selection to that one instead |
+| `R` | Rename the group the cursor is inside |
 | `V` | Hold the group under the cursor. While one is held, `H J K L` move the whole rectangle and everything inside it, `h j k l` move its far edge, `x` deletes it, `Esc` lets go |
 | `Tab` / `Shift-Tab` | Next / previous workspace, in name order |
 | `w` | Workspace picker — `j`/`k` to choose, `Enter` to open, `n` new, `x` delete |
@@ -252,6 +269,13 @@ when there is none, shoving whoever stood where it grew to. Which of the two `g`
 decided by where the cursor is and nothing else; see
 [ADR 0012](docs/adr/0012-g-decides-by-where-the-cursor-is.md).
 
+`R` renames the group the cursor is inside, on the same rule: which group is decided by where
+the cursor is, and `R` anywhere outside every rectangle does nothing. The prompt opens on the
+current name, an empty one falls back to the group's id the way a node's rename does, and the
+new name appears in both places the old one was drawn — the rectangle's top border and every
+member card's bottom border. Nothing moves and no card changes group: only what the border
+says.
+
 `V` picks the group under the cursor up and holds it. While it is held the motion keys act
 on the rectangle instead of on a card: `H J K L` move it one cell, carrying every node that
 was inside it when you picked it up and shoving whoever stood in its path out from under it
@@ -323,14 +347,22 @@ is: name, colour, tags, and position, so the map does not rearrange itself after
 `Enter` on a dead node offers to respawn it: a fresh session in the node's own working
 directory, falling back to the workspace's, re-running its command if it has one. The node
 keeps its id, so it keeps its session name too — respawning is not creating a new node. `x`
-on a dead node asks to remove the card rather than to kill anything, because there is nothing
-left to kill.
+on a dead node asks to kill it and its session, the same as on a live one. The dead mark is
+what the last pass saw, and a session restarted outside Trigpoint since then would be
+abandoned by a card that removed itself; asking tmux to kill a session that really is gone
+costs one no-op subprocess.
 
 A session under the `trig_` prefix with no node behind it is reconstructed as a card, from
 the `TRIG_WORKSPACE` / `TRIG_NODE_ID` / `TRIG_NODE_KIND` that every session Trigpoint starts
 carries in its own environment. That is what gets your map back after a lost or corrupted
 state file. Sessions belonging to another workspace are left to the map that owns them, and
 sessions outside the prefix are left alone entirely until you adopt one with `A`.
+
+A workspace name may contain `_`, so `trig_main_dev_x` reads as `main`'s node `dev_x` as
+readily as `main_dev`'s node `x`. When the session carries no `TRIG_WORKSPACE` to settle it —
+a session made by hand under the prefix, or one whose environment was cleared — only the
+workspace whose reading leaves a real node id takes it. A session that no workspace can claim
+that way stays off every map rather than landing on the wrong one.
 
 Liveness is worked out from tmux every time and never written to disk: a stored flag would be
 stale from the moment the machine rebooted, which is exactly when the map is most relied on.
@@ -574,6 +606,7 @@ how the origin has always been pressed.
 | `size` | `s` | Cycle card size |
 | `select` | `v` | Visual select |
 | `group` | `g` | Group the selection |
+| `rename_group` | `R` | Rename the group under the cursor |
 | `hold` | `V` | Hold the group under the cursor |
 | `workspace_next` | `tab` | Next workspace |
 | `workspace_prev` | `shift+tab` | Previous workspace |
@@ -624,6 +657,23 @@ terminals have not been tried yet.
 
 Before changing anything, read [`CONTEXT.md`](CONTEXT.md) for the vocabulary the code and
 the issues use, and [`docs/adr/`](docs/adr) for the decisions already taken.
+
+### Releasing
+
+Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml),
+which vets, tests, and then builds the artifacts with
+[`scripts/build-release.sh`](scripts/build-release.sh) — the same script anyone can run, so a
+release is reproducible off a laptop rather than only inside CI:
+
+```sh
+scripts/build-release.sh v1.2.3      # dist/*.tar.gz and dist/SHA256SUMS
+scripts/check-release.sh dist        # runs the tarball's trig doctor on a clean machine
+```
+
+`check-release.sh` unpacks a built tarball in a container that has tmux and no Go toolchain
+and runs `trig doctor` in it, which is what "a downloaded binary works" has to mean. A
+foreign architecture needs `binfmt_misc` registered for it; without that the script says so
+rather than passing quietly.
 
 ## Licence
 

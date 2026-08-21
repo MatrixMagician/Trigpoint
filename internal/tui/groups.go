@@ -58,6 +58,28 @@ func (m Model) updateGroupTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateGroupRename is `R`. It reuses m.editing, which is the id a prompt was
+// opened on whatever kind of thing it names, so a group rename needs no state
+// of its own.
+func (m Model) updateGroupRename(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m, act := m.typed(msg, maxGroupTitleLen)
+	switch act {
+	case actCancel:
+		m, _, _ = m.done()
+	case actCommit:
+		m, id, title := m.done()
+		title = strings.TrimSpace(title)
+		if title == "" {
+			// The same fallback a node's rename takes: a rectangle whose border
+			// says nothing is a group you cannot name on a card.
+			title = id
+		}
+		m.ws.Groups = m.withGroup(id, func(g *state.Group) { g.Title = title })
+		return m.save(), nil
+	}
+	return m, nil
+}
+
 // createGroup gathers the nodes together and draws the rectangle round them.
 // Gathering first is what keeps a group tight: two nodes at opposite ends of
 // the map would otherwise make a rectangle swallowing everything between them,
@@ -394,17 +416,22 @@ func (m Model) deleteGroup() Model {
 	return m.release().save()
 }
 
-// withRect is the groups with one of them redrawn, in a fresh slice: a Model is
-// copied by value all over Bubble Tea, and editing in place would move the
-// rectangle on every older copy too.
-func (m Model) withRect(id string, rect state.Rect) []state.Group {
+// withGroup is the groups with one of them edited, in a fresh slice: a Model is
+// copied by value all over Bubble Tea, and editing in place would change every
+// older copy too.
+func (m Model) withGroup(id string, edit func(*state.Group)) []state.Group {
 	groups := append([]state.Group(nil), m.ws.Groups...)
 	for i := range groups {
 		if groups[i].ID == id {
-			groups[i].Rect = rect
+			edit(&groups[i])
 		}
 	}
 	return groups
+}
+
+// withRect is that for the one edit moving, resizing, and joining all make.
+func (m Model) withRect(id string, rect state.Rect) []state.Group {
+	return m.withGroup(id, func(g *state.Group) { g.Rect = rect })
 }
 
 // heldTitle is what the status bar calls the group in hand.

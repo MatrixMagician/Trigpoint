@@ -37,6 +37,7 @@ const (
 	modeTags
 	modeBulkTags
 	modeGroupTitle
+	modeGroupRename
 	modeColour
 	modeWorkspace
 	modeNewWorkspace
@@ -249,6 +250,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateBulkTags(msg)
 		case modeGroupTitle:
 			return m.updateGroupTitle(msg)
+		case modeGroupRename:
+			return m.updateGroupRename(msg)
 		case modeColour:
 			return m.updateColour(msg)
 		case modeWorkspace:
@@ -383,6 +386,8 @@ func (m Model) statusBar() string {
 		return m.bar(statusStyle, "Rename: "+flatten(m.input)+"▏")
 	case m.mode == modeTags:
 		return m.bar(statusStyle, "Tags: "+flatten(m.input)+"▏")
+	case m.mode == modeGroupRename:
+		return m.bar(statusStyle, "Group name: "+flatten(m.input)+"▏")
 	case m.mode == modeGroupTitle:
 		return m.bar(statusStyle, fmt.Sprintf("Group %s: %s▏",
 			pluralise(len(m.grouping), "node"), flatten(m.input)))
@@ -422,10 +427,12 @@ func (m Model) statusBar() string {
 		return m.bar(statusStyle, fmt.Sprintf("Kill %s? (y/n)", pluralise(len(m.killing), "node")))
 	case m.mode == modeConfirmKill:
 		node, _ := m.node(m.killing[0])
-		if !node.HasSession() || m.dead[m.killing[0]] {
-			// There is no session behind a note, and a dead node's is already
-			// gone, so offering to kill one would be asking the user to
-			// confirm something that cannot happen.
+		if !node.HasSession() {
+			// A note has no session at all, so removing the card is the whole
+			// of it. A node the map believes dead is not offered the same
+			// wording: the dead flag is a derived cache, and y routes every
+			// session-backed card through kill precisely because the flag can
+			// be wrong (nodes.go).
 			return m.bar(statusStyle, fmt.Sprintf("Remove %s? (y/n)", flatten(node.Title)))
 		}
 		return m.bar(statusStyle, fmt.Sprintf("Kill %s and its session? (y/n)", flatten(node.Title)))
