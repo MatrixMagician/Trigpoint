@@ -36,3 +36,6 @@ go.work.sum
 
 # Release artifacts (scripts/build-release.sh)
 /dist/
+
+# The trig record.sh builds into this directory for the image to pick up
+/docs/demo/trig
