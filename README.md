@@ -326,6 +326,12 @@ carries in its own environment. That is what gets your map back after a lost or 
 state file. Sessions belonging to another workspace are left to the map that owns them, and
 sessions outside the prefix are left alone entirely until you adopt one with `A`.
 
+A workspace name may contain `_`, so `trig_main_dev_x` reads as `main`'s node `dev_x` as
+readily as `main_dev`'s node `x`. When the session carries no `TRIG_WORKSPACE` to settle it —
+a session made by hand under the prefix, or one whose environment was cleared — only the
+workspace whose reading leaves a real node id takes it. A session that no workspace can claim
+that way stays off every map rather than landing on the wrong one.
+
 Liveness is worked out from tmux every time and never written to disk: a stored flag would be
 stale from the moment the machine rebooted, which is exactly when the map is most relied on.
 The same pass runs at startup, whenever tmux says the session list changed, and on the slow

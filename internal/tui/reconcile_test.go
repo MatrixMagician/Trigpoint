@@ -392,6 +392,45 @@ func TestAnOrphanWithNoEnvironmentIsRecognisedByItsName(t *testing.T) {
 	}
 }
 
+// Workspace names may contain "_" (state.ValidName), so trig_main_dev_x reads
+// as main's node dev_x as readily as main_dev's node x. With no TRIG_WORKSPACE
+// to break the tie, only the workspace whose split leaves a real node id — one
+// with no "_" in it — may take it (#34).
+func TestAWorkspaceDoesNotTakeASessionBelongingToOneItsNamePrefixes(t *testing.T) {
+	session := tmux.SessionName("main_dev", "x")
+
+	main, mainSessions, _ := newNodeModel(t, state.Workspace{Name: "main"})
+	mainSessions.live = []string{session}
+	main = reconciled(t, main)
+
+	if len(main.ws.Nodes) != 0 {
+		t.Errorf("main_dev's session is not main's to reconstruct, got %+v", main.ws.Nodes)
+	}
+
+	dev, devSessions, _ := newNodeModel(t, state.Workspace{Name: "main_dev"})
+	devSessions.live = []string{session}
+	dev = reconciled(t, dev)
+
+	if _, ok := dev.node("x"); !ok {
+		t.Errorf("the workspace the session does belong to should still take it, got %+v", dev.ws.Nodes)
+	}
+}
+
+// The same guard reads TRIG_NODE_ID, which is no more authoritative than the
+// name when nothing says which workspace seeded it.
+func TestAnAmbiguousNodeIDWithNoWorkspaceIsNotTakenEither(t *testing.T) {
+	m, sessions, _ := newNodeModel(t, state.Workspace{Name: "main"})
+	session := tmux.SessionName("main", "dev_x")
+	sessions.live = []string{session}
+	sessions.envs = map[string]map[string]string{session: {"TRIG_NODE_ID": "dev_x"}}
+
+	m = reconciled(t, m)
+
+	if len(m.ws.Nodes) != 0 {
+		t.Errorf("an id that could be another workspace's split should be refused, got %+v", m.ws.Nodes)
+	}
+}
+
 func TestAnOrphanIsReconstructedOnlyOnce(t *testing.T) {
 	m, sessions, _ := newNodeModel(t, state.Workspace{Name: "main"})
 	sessions.live = []string{tmux.SessionName("main", "zzz")}
