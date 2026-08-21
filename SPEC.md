@@ -352,7 +352,7 @@ Everything scriptable; the TUI is a client of the same internal services.
 - **M4 — Agents.** Agent node kind, status-file contract, fsnotify watcher, badges,
   `u` attention jump, `trig init-hooks claude`, bell notification.
 - **M5 — Polish & release.** Full keymap remapping, `trig new/ls/attach` CLI, docs,
-  goreleaser static builds (linux/amd64, linux/arm64), demo GIF (vhs).
+  static builds (linux/amd64), demo GIF (vhs).
 
 Each milestone lands with tests and an updated README section, in the usual
 milestone-by-milestone Claude Code flow.

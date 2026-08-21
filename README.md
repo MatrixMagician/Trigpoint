@@ -29,22 +29,24 @@ status, a fully remappable keymap, and the `trig new`/`ls`/`attach` command line
 | M4 | Agents, agent nodes, status badges, attention jump, `trig init-hooks claude` | done |
 | M5 | Polish and release, keymap remapping, `trig new`/`ls`/`attach`, docs, static builds, demo | done |
 
-Linux only for now. macOS is deferred and wezterm dropped; see
-[ADR 0019](docs/adr/0019-v1-ships-linux-only.md). Remote nodes over SSH are the v1.1
-candidate ([`SPEC.md`](SPEC.md) §13) and are deliberately not here.
+Linux on x86-64 for now. macOS is deferred and wezterm dropped
+([ADR 0019](docs/adr/0019-v1-ships-linux-only.md)), and arm64 is no longer built
+([ADR 0020](docs/adr/0020-release-builds-are-linux-amd64-only.md)). Remote nodes over SSH
+are the v1.1 candidate ([`SPEC.md`](SPEC.md) §13) and are deliberately not here.
 
 [`SPEC.md`](SPEC.md) is the whole design; this README describes only what is built.
 
 ## Requirements
 
-- Linux, x86-64 or arm64. macOS is deferred; see
-  [ADR 0019](docs/adr/0019-v1-ships-linux-only.md)
+- Linux, x86-64. macOS is deferred and arm64 is not built; see
+  [ADR 0019](docs/adr/0019-v1-ships-linux-only.md) and
+  [ADR 0020](docs/adr/0020-release-builds-are-linux-amd64-only.md)
 - tmux 3.2 or newer (control mode, `capture-pane -e`, session environment)
 - Go 1.26 or newer, only to build it yourself
 
 ## Install
 
-Download the binary for your architecture from the
+Download the binary from the
 [latest release](https://github.com/MatrixMagician/Trigpoint/releases/latest). It is static
 and depends on nothing but tmux, so there is no toolchain to install:
 
@@ -54,7 +56,10 @@ sudo install trig_<version>_linux_amd64/trig /usr/local/bin/trig
 ```
 
 Each release also carries a `SHA256SUMS`, which `sha256sum --check SHA256SUMS` verifies
-against the tarballs you downloaded.
+against the tarball you downloaded.
+
+On any other architecture, build it from a clone or with `go install`; both are below. The
+release only carries what has been run on the machine that cut it.
 
 With a Go toolchain:
 
@@ -681,10 +686,10 @@ scripts/build-release.sh v1.2.3      # dist/*.tar.gz and dist/SHA256SUMS
 scripts/check-release.sh dist        # runs the tarball's trig doctor on a clean machine
 ```
 
-`check-release.sh` unpacks a built tarball in a container that has tmux and no Go toolchain
-and runs `trig doctor` in it, which is what "a downloaded binary works" has to mean. A
-foreign architecture needs `binfmt_misc` registered for it; without that the script says so
-rather than passing quietly.
+`check-release.sh` unpacks the built tarball in a container that has tmux and no Go
+toolchain and runs `trig doctor` in it, which is what "a downloaded binary works" has to
+mean. Every artifact a release carries goes through it, which is why the release carries one
+architecture.
 
 ## Licence
 

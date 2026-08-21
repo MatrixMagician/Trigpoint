@@ -15,6 +15,10 @@ platform nobody here can run: Terminal.app's handoff unverified, `trig doctor` u
 clean machine, and a release artifact whose first bug report would be its first test. v1 is
 Linux-only, and the release builds `linux/amd64` and `linux/arm64`.
 
+> Superseded in part by [ADR 0020](0020-release-builds-are-linux-amd64-only.md), which
+> applies the same argument to `linux/arm64` and drops it. Release builds are `linux/amd64`
+> only.
+
 ## Considered options
 
 **Ship `darwin/arm64` untested.** Rejected. SPEC §14 calls residual raw-mode corruption
