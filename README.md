@@ -171,7 +171,7 @@ What is bound today:
 | `0` | Jump to the origin |
 | `Enter` | Attach to the node under the cursor — the whole terminal, handed over. On a dead node, offer to respawn it. On a note, edit its body in `$EDITOR` |
 | `Space` | Peek: read the node's recent output full-screen, without attaching — `j`/`k`, `Space`/`b`, `g`/`G` scroll, `Esc` returns |
-| `n` | New shell node at the nearest free cell to the cursor |
+| `n` | New shell node on the cursor's cell if it is empty, and otherwise in the nearest free cell the map is already showing |
 | `N` | New note — a rendered markdown card with no session behind it |
 | `a` | New agent node — `j`/`k` to choose a preset from config or `custom…` to type a command, `Enter` to start it. The node stores its command, so a respawn re-runs it; when the agent exits the shell remains |
 | `r` | Rename the node under the cursor |
@@ -393,8 +393,8 @@ and carries no badge.
 
 Trigpoint is useful on day one against a tmux zoo you have been running for months. `A` lists
 the sessions on the server that Trigpoint did not create and that are not already on this map;
-`j` and `k` choose among them and `Enter` adopts one, which puts a shell node on the map at the
-nearest free cell, tagged `adopted`, titled after the session.
+`j` and `k` choose among them and `Enter` adopts one, which puts a shell node on the map in the
+nearest free cell you are already looking at, tagged `adopted`, titled after the session.
 
 Adoption creates nothing and renames nothing. The session was already running, the card simply
 appears over it, and the name stays the one its owner gave it — so `tmux attach -t work` still

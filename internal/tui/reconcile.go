@@ -203,7 +203,7 @@ func (m Model) applyReconciled(msg reconciledMsg) (Model, tea.Cmd) {
 		if pending(m.pending, node.ID) {
 			continue
 		}
-		node.Pos = m.ws.NearestFreeCell(m.ws.Viewport.Cursor)
+		node.Pos = m.ws.PlacementCell(m.ws.Viewport)
 		// Appended rather than placed: the cursor belongs to the user, and a
 		// card the map found on its own has no business moving it.
 		m.ws.Nodes = append(append([]state.Node(nil), m.ws.Nodes...), node)
