@@ -160,7 +160,7 @@ func (m Model) adopt(session string) (tea.Model, tea.Cmd) {
 		Kind:    state.KindShell,
 		Title:   state.ClampRunes(sanitise(session), state.MaxTitleLen),
 		Tags:    []string{adoptedTag},
-		Pos:     draft.NearestFreeCell(m.ws.Viewport.Cursor),
+		Pos:     draft.PlacementCell(m.ws.Viewport),
 		Session: session,
 		// CreatedAt is left zero, so the card shows no age rather than the age
 		// of its own adoption: the session is as old as it is, and Trigpoint was

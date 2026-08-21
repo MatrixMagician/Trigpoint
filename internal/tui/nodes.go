@@ -111,7 +111,7 @@ func (m Model) createNode() (tea.Model, tea.Cmd) {
 		Kind:      m.creating,
 		Title:     title,
 		Cmd:       m.creatingCmd,
-		Pos:       draft.NearestFreeCell(m.ws.Viewport.Cursor),
+		Pos:       draft.PlacementCell(m.ws.Viewport),
 		CreatedAt: time.Now(),
 	}
 	m.mode, m.input, m.status, m.creatingCmd = modeNormal, "", "", ""

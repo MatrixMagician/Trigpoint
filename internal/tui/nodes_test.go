@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 	"testing"
@@ -642,5 +643,27 @@ func TestTheKillPromptSaysWhatWillHappenToEachKindOfCard(t *testing.T) {
 				t.Errorf("prompt should read %q, got:\n%s", tc.want, m.View())
 			}
 		})
+	}
+}
+
+func TestTenNotesMadeInARowStayOnScreen(t *testing.T) {
+	m, _, _ := newNodeModel(t, state.Workspace{Name: "main"})
+	cols, rows := m.viewCells()
+
+	for i := 0; i < 10; i++ {
+		next, cmd := typeKeys(t, m, "N")
+		m = settle(t, next, cmd)
+		next, cmd = typeKeys(t, m, fmt.Sprintf("note%d", i))
+		m = settle(t, next, cmd)
+		next, cmd = press(t, m, tea.KeyEnter)
+		m = settle(t, next, cmd)
+	}
+
+	off := m.ws.Viewport.Offset
+	for _, n := range m.ws.Nodes {
+		if n.Pos.Col < off.Col || n.Pos.Col >= off.Col+cols ||
+			n.Pos.Row < off.Row || n.Pos.Row >= off.Row+rows {
+			t.Errorf("%q is at %+v, outside the %dx%d viewport at %+v", n.Title, n.Pos, cols, rows, off)
+		}
 	}
 }

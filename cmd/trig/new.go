@@ -94,10 +94,10 @@ flags:
 		Title: strings.TrimSpace(*title),
 		Cmd:   *command,
 		Dir:   *dir,
-		// The cell the map view would have chosen: the nearest free one to
-		// where the cursor was left. One node per cell is the map's only layout
+		// The cell the map view would have chosen, from the same viewport it
+		// would have chosen it from. One node per cell is the map's only layout
 		// rule, and it holds whoever placed the node.
-		Pos:       ws.NearestFreeCell(ws.Viewport.Cursor),
+		Pos:       ws.PlacementCell(ws.Viewport),
 		CreatedAt: time.Now(),
 	}
 	if node.Title == "" {

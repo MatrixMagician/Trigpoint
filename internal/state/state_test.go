@@ -452,3 +452,50 @@ func TestRemoveRefusesANameThatEscapesTheDirectory(t *testing.T) {
 		t.Errorf("Remove followed the path out of the state directory: %v", err)
 	}
 }
+
+func TestPlacementCellTakesTheCursorsOwnCellWhenNothingIsOnIt(t *testing.T) {
+	ws := Workspace{Name: "main", Nodes: []Node{{ID: "a", Pos: Cell{Col: 1, Row: 1}}}}
+	view := Viewport{Cursor: Cell{Col: 3, Row: 4}}
+
+	if got := ws.PlacementCell(view); got != view.Cursor {
+		t.Errorf("placed at %+v; a cursor pointing at empty space is where the card goes", got)
+	}
+}
+
+func TestPlacementCellFillsWhatTheViewportShows(t *testing.T) {
+	// Ten cards made in a row, each landing on the cursor that the last one
+	// moved. Every one of them has to be inside the window the map opens on,
+	// which is five cells by five from the offset.
+	const window = 5
+	ws := Workspace{Name: "main"}
+	view := Viewport{}
+	for i := 0; i < 10; i++ {
+		pos := ws.PlacementCell(view)
+		for _, n := range ws.Nodes {
+			if n.Pos == pos {
+				t.Fatalf("card %d placed on top of %s at %+v", i, n.ID, pos)
+			}
+		}
+		ws.Nodes = append(ws.Nodes, Node{ID: string(rune('a' + i)), Pos: pos})
+		view.Cursor = pos
+	}
+	for _, n := range ws.Nodes {
+		if n.Pos.Col < view.Offset.Col || n.Pos.Col >= view.Offset.Col+window ||
+			n.Pos.Row < view.Offset.Row || n.Pos.Row >= view.Offset.Row+window {
+			t.Errorf("%s is at %+v, outside the %dx%d window at %+v", n.ID, n.Pos, window, window, view.Offset)
+		}
+	}
+}
+
+func TestPlacementCellGrowsDownAndRightOfTheViewport(t *testing.T) {
+	// The viewport is what the map is showing, so a card that cannot go on the
+	// cursor goes somewhere the user is already looking. Up and left of the
+	// offset is off screen by definition.
+	ws := Workspace{Name: "main", Nodes: []Node{{ID: "a", Pos: Cell{Col: 4, Row: 4}}}}
+	view := Viewport{Cursor: Cell{Col: 4, Row: 4}, Offset: Cell{Col: 4, Row: 4}}
+
+	got := ws.PlacementCell(view)
+	if got.Col < view.Offset.Col || got.Row < view.Offset.Row {
+		t.Errorf("placed at %+v, up or left of the offset %+v and so off screen", got, view.Offset)
+	}
+}

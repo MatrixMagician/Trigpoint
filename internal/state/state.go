@@ -361,9 +361,40 @@ func newID() string {
 	return string(buf)
 }
 
+// PlacementCell is where a node the user has just asked for goes. The cursor's
+// own cell when nothing is on it, so that pointing at empty space and creating
+// puts the card exactly there. Otherwise the nearest free cell down and right
+// of the viewport's own corner, which is the region the map is already
+// showing.
+//
+// Searching from the viewport rather than from the cursor is what stops
+// placement walking. The cursor follows each new card, so a search that starts
+// from the cursor starts one ring further out every time and the cards trail
+// off screen behind it; the viewport does not move while the cards fit in it.
+// See docs/adr/0021-a-new-card-fills-the-map-you-are-looking-at.md.
+func (ws Workspace) PlacementCell(view Viewport) Cell {
+	occupied := make(map[Cell]bool, len(ws.Nodes))
+	for _, n := range ws.Nodes {
+		occupied[n.Pos] = true
+	}
+	if !occupied[view.Cursor] {
+		return view.Cursor
+	}
+	// Up and left of the offset is off screen by definition, so the search
+	// never offers it. The map is infinite in the other two directions, so
+	// there is always an answer.
+	for radius := 0; ; radius++ {
+		for _, c := range ring(view.Offset, radius) {
+			if c.Col >= view.Offset.Col && c.Row >= view.Offset.Row && !occupied[c] {
+				return c
+			}
+		}
+	}
+}
+
 // NearestFreeCell finds the closest cell to from that no node occupies,
-// searching outward ring by ring. One node per cell is the map's only layout
-// rule, so this is what "place it near the cursor" means.
+// searching outward ring by ring. It settles a cell a node already has and may
+// have lost to a shove; PlacementCell is what decides where a new card goes.
 func (ws Workspace) NearestFreeCell(from Cell) Cell {
 	occupied := make(map[Cell]bool, len(ws.Nodes))
 	for _, n := range ws.Nodes {
