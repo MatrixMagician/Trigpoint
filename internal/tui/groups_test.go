@@ -549,3 +549,90 @@ func TestVOnNoGroupSaysSoRatherThanFailingQuietly(t *testing.T) {
 		t.Error("a hold that could not happen should say why: x means something else without one")
 	}
 }
+
+// R renames the group the cursor is inside, the way r renames the node it is
+// on. Which group is decided by where the cursor is and nothing else, the same
+// rule g follows (ADR 0012).
+func TestROpensTheGroupNamePromptOnItsCurrentTitle(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+
+	m = pressKeys(t, m, "R")
+
+	if m.mode != modeGroupRename {
+		t.Fatalf("R inside a group should open its name prompt, mode is %v", m.mode)
+	}
+	if m.input != "infra" {
+		t.Errorf("the prompt opens on %q, want the group's current title", m.input)
+	}
+	if !strings.Contains(m.View(), "infra") {
+		t.Errorf("the prompt should be on the bar, got:\n%s", m.View())
+	}
+}
+
+func TestRenamingAGroupRedrawsItsBorderAndItsMembersCards(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+
+	m = pressKeys(t, m, "R")
+	m, _ = typeKeys(t, m, "platform")
+	m, _ = press(t, m, tea.KeyEnter)
+
+	if m.ws.Groups[0].Title != "platform" {
+		t.Fatalf("group title = %q, want the name that was typed", m.ws.Groups[0].Title)
+	}
+	view := m.View()
+	if strings.Contains(view, "infra") {
+		t.Errorf("the old name is still drawn, got:\n%s", view)
+	}
+	// Once in the rectangle's top border, once on each member card's bottom
+	// border: two nodes are inside wholeRect.
+	if got := strings.Count(view, "platform"); got != 3 {
+		t.Errorf("the new name is drawn %d times, want 3 (the rect and two members), got:\n%s", got, view)
+	}
+	reloaded, err := state.Load(m.stateDir, "main")
+	if err != nil {
+		t.Fatalf("reloading the workspace: %v", err)
+	}
+	if reloaded.Groups[0].Title != "platform" {
+		t.Errorf("saved title = %q, want the rename to survive a restart", reloaded.Groups[0].Title)
+	}
+}
+
+func TestAGroupRenamedToNothingFallsBackToItsID(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+
+	m = pressKeys(t, m, "R")
+	for range "infra" {
+		m, _ = press(t, m, tea.KeyBackspace)
+	}
+	m, _ = press(t, m, tea.KeyEnter)
+
+	if got := m.ws.Groups[0].Title; got != "g1" {
+		t.Errorf("group title = %q, want the id an empty name falls back to", got)
+	}
+}
+
+func TestEscLeavesAGroupsNameAsItWas(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+
+	m = pressKeys(t, m, "R")
+	m, _ = typeKeys(t, m, "platform")
+	m, _ = press(t, m, tea.KeyEsc)
+
+	if m.mode != modeNormal {
+		t.Errorf("esc should close the prompt, mode is %v", m.mode)
+	}
+	if got := m.ws.Groups[0].Title; got != "infra" {
+		t.Errorf("group title = %q, want the name esc left alone", got)
+	}
+}
+
+func TestROutsideEveryGroupDoesNothing(t *testing.T) {
+	m := groupedMap(t, wholeRect)
+	m = moveTo(t, m, state.Cell{Col: 4})
+
+	m = pressKeys(t, m, "R")
+
+	if m.mode != modeNormal {
+		t.Errorf("R outside a group has no group to rename, mode is %v", m.mode)
+	}
+}

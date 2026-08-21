@@ -37,6 +37,7 @@ const (
 	modeTags
 	modeBulkTags
 	modeGroupTitle
+	modeGroupRename
 	modeColour
 	modeWorkspace
 	modeNewWorkspace
