@@ -159,12 +159,12 @@ What is bound today:
 | `N` | New note — a rendered markdown card with no session behind it |
 | `a` | New agent node — `j`/`k` to choose a preset from config or `custom…` to type a command, `Enter` to start it. The node stores its command, so a respawn re-runs it; when the agent exits the shell remains |
 | `r` | Rename the node under the cursor |
-| `c` | Cycle its accent colour · `C` pick one by name — `j`/`k` to choose, `Enter` to set |
+| `c` | Cycle its accent colour · `C` pick one by name — `j`/`k` to choose, `Enter` to set. With a selection gathered, both set one colour on every gathered card |
 | `t` | Edit its tags — space-separated, several to a node. With a selection gathered, `tag` adds to every selected node and `-tag` removes |
-| `s` | Cycle its card size, small → medium → large |
+| `s` | Cycle its card size, small → medium → large. With a selection gathered, every gathered card goes to the same size |
 | `A` | Adopt a tmux session Trigpoint did not create — `j`/`k` to choose, `Enter` to adopt |
 | `x` | Kill the node under the cursor and its session (asks first; a note, which has no session, is just removed). With a selection gathered, one confirmation names the count and kills all of them |
-| `v` | Visual select — gather the node under the cursor, or let go of one already gathered. The motion keys then extend the selection, and `H J K L`, `g`, `t`, and `x` act on all of it at once; `Esc` clears it |
+| `v` | Visual select — gather the node under the cursor, or let go of one already gathered. The motion keys then extend the selection, and `H J K L`, `g`, `t`, `c`, `C`, `s`, and `x` act on all of it at once; `Esc` clears it |
 | `g` | Group — gathers the selection together and draws a named rectangle round it. With the cursor already inside a group, adds the selection to that one instead |
 | `R` | Rename the group the cursor is inside |
 | `V` | Hold the group under the cursor. While one is held, `H J K L` move the whole rectangle and everything inside it, `h j k l` move its far edge, `x` deletes it, `Esc` lets go |
@@ -210,6 +210,14 @@ a colour is a thing you pick by seeing it. `t` edits the tags: space-separated, 
 optional, several to a node. See
 [ADR 0008](docs/adr/0008-accent-colours-are-a-named-palette.md) for why the colours are a
 closed set of names.
+
+`c`, `C` and `s` take the selection as well, and give every gathered card the same answer:
+one colour, or one size. `c` and `s` step once, from the first card `v` gathered, rather than
+stepping each card from wherever it happened to be — a gesture over a gathered run is asking
+to unify it, and cycling each card independently would leave a spread behind. `C` sets the
+colour it is given, and every gathered card wears it while you choose. `r` is the exception:
+a title is a card's handle, so renaming several at once would give them all the same one, and
+`r` stays on the node under the cursor.
 
 `s` cycles the card size, small → medium → large, which is how many preview lines the card
 shows — `preview_lines` in config, `0 / 4 / 10` by default. A small card shows none and is

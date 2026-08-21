@@ -66,26 +66,45 @@ func colourIndex(name string) int {
 // cycleColour steps a card's accent on by one, and off the end of the palette
 // back to no colour at all — which is how a border is made plain again without
 // opening the picker.
+//
+// Over a gathered selection it steps once, from the first gathered card, and
+// sets all of them to that one result. Cycling each card independently would
+// leave a selection that started on different colours in a spread of them,
+// which is the opposite of what gathering cards and pressing one key asks for;
+// and it is the reading that agrees with C, which sets one colour on all of
+// them (§7.3).
 func (m Model) cycleColour() (tea.Model, tea.Cmd) {
-	node, ok := m.selected()
+	ids, anchor, ok := m.anchored()
 	if !ok {
 		return m, nil
 	}
 	next := ""
-	if i := colourIndex(node.Colour); i+1 < len(colours) {
+	if i := colourIndex(anchor.Colour); i+1 < len(colours) {
 		next = colours[i+1].Name
 	}
-	return m.withNode(node.ID, func(n *state.Node) { n.Colour = next }).save(), nil
+	return m.withNodes(ids, func(n *state.Node) { n.Colour = next }).save(), nil
 }
 
-// openColours opens the picker on the colour the node already has, so that C is
-// a way to change a choice rather than a way to lose it.
+// anchored is what an attribute key acts on: the targets, and the first of them
+// — the card `v` was pressed on. A cycle needs one card to step from, because
+// the answer is one value for all of them.
+func (m Model) anchored() ([]string, state.Node, bool) {
+	ids := m.targets()
+	if len(ids) == 0 {
+		return nil, state.Node{}, false
+	}
+	anchor, ok := m.node(ids[0])
+	return ids, anchor, ok
+}
+
+// openColours opens the picker on the colour the first target already has, so
+// that C is a way to change a choice rather than a way to lose it.
 func (m Model) openColours() (tea.Model, tea.Cmd) {
-	node, ok := m.selected()
+	_, anchor, ok := m.anchored()
 	if !ok {
 		return m, nil
 	}
-	m.mode, m.editing, m.choice = modeColour, node.ID, maxInt(colourIndex(node.Colour), 0)
+	m.mode, m.editing, m.choice = modeColour, anchor.ID, maxInt(colourIndex(anchor.Colour), 0)
 	return m, nil
 }
 
@@ -96,9 +115,9 @@ func (m Model) updateColour(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		m.choice = (m.choice + len(colours) - 1) % len(colours)
 	case "enter":
-		name := colours[m.choice].Name
-		m, id, _ := m.done()
-		return m.withNode(id, func(n *state.Node) { n.Colour = name }).save(), nil
+		name, ids := colours[m.choice].Name, m.targets()
+		m, _, _ = m.done()
+		return m.withNodes(ids, func(n *state.Node) { n.Colour = name }).save(), nil
 	case "esc", "q":
 		m, _, _ = m.done()
 	}
@@ -109,7 +128,7 @@ func (m Model) updateColour(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // is open on it — then the card wears the colour under the picker's cursor, so
 // that choosing a colour means seeing it rather than reading its name.
 func (m Model) shown(n state.Node) state.Node {
-	if m.mode == modeColour && n.ID == m.editing {
+	if m.mode == modeColour && m.picking(n) {
 		n.Colour = colours[m.choice].Name
 	}
 	return n
@@ -121,17 +140,31 @@ func (m Model) shown(n state.Node) state.Node {
 // lost by dropping it for those few keystrokes — the card wearing a colour that
 // changes under j and k is unmistakably the one being coloured.
 func (m Model) drawnSelected(n state.Node) bool {
-	if m.mode == modeColour && n.ID == m.editing {
+	if m.mode == modeColour && m.picking(n) {
 		return false
 	}
 	return n.Pos == m.ws.Viewport.Cursor
 }
 
+// picking reports whether the open colour picker is about this card. Over a
+// gathered selection that is every card in it, so choosing a colour means
+// seeing it on everything it is about to land on rather than on one of them.
+func (m Model) picking(n state.Node) bool {
+	return n.ID == m.editing || m.isSelected(n.ID)
+}
+
 // colourBar names the colour under the picker's cursor. The name and not a
 // swatch: the card behind the bar is already showing the colour itself.
 func (m Model) colourBar() string {
-	return fmt.Sprintf("Colour %s (%d of %d) · j/k choose · ⏎ set · esc cancel",
-		colours[m.choice].Name, m.choice+1, len(colours))
+	on := ""
+	if len(m.selection) > 0 {
+		// The count, the way the bulk tag prompt names its own: a picker that
+		// looked the same for one card and for nine would be a bulk edit with
+		// nothing on screen saying so.
+		on = " on " + pluralise(len(m.selection), "node")
+	}
+	return fmt.Sprintf("Colour %s (%d of %d)%s · j/k choose · ⏎ set · esc cancel",
+		colours[m.choice].Name, m.choice+1, len(colours), on)
 }
 
 // action is what a keystroke did to a one-line prompt. The three prompts differ
@@ -226,12 +259,12 @@ func (m Model) sizeLines(n state.Node) int {
 
 // cycleSize steps a card through the three sizes and round again.
 func (m Model) cycleSize() (tea.Model, tea.Cmd) {
-	node, ok := m.selected()
+	ids, anchor, ok := m.anchored()
 	if !ok {
 		return m, nil
 	}
-	next := sizes[(sizeIndex(node.Size)+1)%len(sizes)]
-	m = m.withNode(node.ID, func(n *state.Node) { n.Size = next }).save().follow()
+	next := sizes[(sizeIndex(anchor.Size)+1)%len(sizes)]
+	m = m.withNodes(ids, func(n *state.Node) { n.Size = next }).save().follow()
 	// A size is both how many lines every card on the map has room for and how
 	// many tmux is asked for, so a change to one leaves the viewport arithmetic
 	// and every snapshot on screen out of date at once.

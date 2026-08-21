@@ -242,7 +242,7 @@ Modal, vim-flavoured. No leader key for core motions; count prefixes supported (
 | `x` | Kill node (confirm; a note, having no session, is removed rather than killed) |
 | `g` | Group: create from selection (**gathers** members together first) / add to group under cursor (grows the rect if no cell is free) |
 | `R` | Rename the group under the cursor (empty name falls back to the group id) |
-| `v` | Visual select (multi-node: move, group, tag, kill in bulk) |
+| `v` | Visual select (multi-node: move, group, tag, colour, size, kill in bulk) |
 | `V` | Hold the group under the cursor: `H J K L` move it rigidly, `h j k l` resize it, `x` deletes it (nodes survive), `Esc` lets go |
 | `Space` | Peek: full-screen scrollable snapshot (`capture-pane -S -2000`) without attaching |
 | `/` | Filter · `Ctrl-K` or `:` palette |
