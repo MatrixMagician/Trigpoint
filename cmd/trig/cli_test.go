@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -559,5 +560,26 @@ func TestNewDoesNotDisturbTheCursorOfAWorkspaceItWasNotAskedAbout(t *testing.T) 
 
 	if after := c.workspace(t, "main").Viewport; after != before {
 		t.Errorf("main's viewport moved from %+v to %+v", before, after)
+	}
+}
+
+func TestNewFillsTheMapTheNextTrigOpensOn(t *testing.T) {
+	// Ten nodes, and the map opens on all of them: a five-by-five window from
+	// the viewport's own offset, which is the smallest a 120x34 terminal draws.
+	const window = 5
+	c := newCLI(t)
+
+	for i := 0; i < 10; i++ {
+		c.mustRun(t, "new", "-k", "note", "-t", fmt.Sprintf("note-%d", i))
+	}
+
+	ws := c.workspace(t, "main")
+	off := ws.Viewport.Offset
+	for _, n := range ws.Nodes {
+		if n.Pos.Col < off.Col || n.Pos.Col >= off.Col+window ||
+			n.Pos.Row < off.Row || n.Pos.Row >= off.Row+window {
+			t.Errorf("%q is at %+v, outside the %dx%d window the map opens on at %+v",
+				n.Title, n.Pos, window, window, off)
+		}
 	}
 }
