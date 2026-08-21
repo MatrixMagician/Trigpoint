@@ -399,3 +399,98 @@ func TestBulkKillTakesNotesAndSessionsTogether(t *testing.T) {
 		t.Errorf("only the node with a session should have been killed, got %v", sessions.killed)
 	}
 }
+
+// c, C and s take the selection through the same targets() seam H J K L, t and
+// x already use (#42). c and s cycle from the first gathered card and set all
+// of them to that one result: cycling each independently would leave a spread
+// of colours behind a gesture asked to unify them.
+func TestSCyclesEveryGatheredCardToTheSameSize(t *testing.T) {
+	m, _ := visualMap(t)
+	m = m.withNodes([]string{"bbb"}, func(n *state.Node) { n.Size = state.SizeL })
+	m = pressKeys(t, m, "v", "l", "s")
+
+	for _, id := range []string{"aaa", "bbb"} {
+		n, _ := m.node(id)
+		if n.Size != state.SizeL {
+			t.Errorf("%s is %q, want every gathered card at the first one's next size", id, n.Size)
+		}
+	}
+	if n, _ := m.node("ccc"); n.Size != "" {
+		t.Errorf("ccc was not gathered but is %q", n.Size)
+	}
+}
+
+func TestCCyclesEveryGatheredCardToTheSameColour(t *testing.T) {
+	m, _ := visualMap(t)
+	m = m.withNodes([]string{"bbb"}, func(n *state.Node) { n.Colour = "green" })
+	m = pressKeys(t, m, "v", "l", "c")
+
+	for _, id := range []string{"aaa", "bbb"} {
+		n, _ := m.node(id)
+		if n.Colour != "red" {
+			t.Errorf("%s is %q, want the colour the first gathered card steps to", id, n.Colour)
+		}
+	}
+	if n, _ := m.node("ccc"); n.Colour != "" {
+		t.Errorf("ccc was not gathered but is %q", n.Colour)
+	}
+}
+
+func TestTheColourPickerSetsEveryGatheredCard(t *testing.T) {
+	m, _ := visualMap(t)
+	m = pressKeys(t, m, "v", "l", "C")
+
+	if m.mode != modeColour {
+		t.Fatalf("C should open the picker, mode is %v", m.mode)
+	}
+	if !strings.Contains(m.View(), "2 nodes") {
+		t.Errorf("the picker should say how many cards it is about, got:\n%s", m.View())
+	}
+	m = pressKeys(t, m, "j")
+	m, _ = press(t, m, tea.KeyEnter)
+
+	want := colours[1].Name
+	for _, id := range []string{"aaa", "bbb"} {
+		if n, _ := m.node(id); n.Colour != want {
+			t.Errorf("%s is %q, want the colour chosen in the picker %q", id, n.Colour, want)
+		}
+	}
+	if n, _ := m.node("ccc"); n.Colour != "" {
+		t.Errorf("ccc was not gathered but is %q", n.Colour)
+	}
+}
+
+// r is deliberately left on the node under the cursor. A title is a node's
+// handle, and renaming a gathered selection would give several cards the same
+// one at once.
+func TestRRenamesOnlyTheNodeUnderTheCursorEvenWithASelection(t *testing.T) {
+	m, _ := visualMap(t)
+	m = pressKeys(t, m, "v", "l", "r")
+	for range "web" {
+		m, _ = press(t, m, tea.KeyBackspace)
+	}
+	m, _ = typeKeys(t, m, "gateway")
+	m, _ = press(t, m, tea.KeyEnter)
+
+	if n, _ := m.node("bbb"); n.Title != "gateway" {
+		t.Errorf("the node under the cursor is %q, want the name that was typed", n.Title)
+	}
+	if n, _ := m.node("aaa"); n.Title != "api" {
+		t.Errorf("aaa is gathered but not under the cursor, and is now %q", n.Title)
+	}
+}
+
+func TestWithNoSelectionTheAttributeKeysActOnTheCursorAlone(t *testing.T) {
+	m, _ := visualMap(t)
+	m = pressKeys(t, m, "c", "s")
+
+	n, _ := m.node("aaa")
+	if n.Colour != "red" || n.Size != state.SizeL {
+		t.Errorf("the cursor's card is %q/%q, want the first colour and the next size", n.Colour, n.Size)
+	}
+	for _, id := range []string{"bbb", "ccc"} {
+		if o, _ := m.node(id); o.Colour != "" || o.Size != "" {
+			t.Errorf("%s is not under the cursor but is %q/%q", id, o.Colour, o.Size)
+		}
+	}
+}
