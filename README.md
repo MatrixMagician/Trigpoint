@@ -6,6 +6,12 @@ Trigpoint (`trig`) lays your shells out on an infinite grid instead of a list of
 owns naming, layout, grouping, status, and discovery; tmux owns the PTYs, the scrollback,
 and the attachment. Quitting Trigpoint kills nothing — every session outlives it.
 
+![Three cards on the map, an agent badge going from running to needs_you, and the terminal
+handed over to that agent's session and back](docs/demo/trigpoint.gif)
+
+The demo is recorded from [`docs/demo/demo.tape`](docs/demo/demo.tape) against a real `trig`
+and a real tmux, and [`docs/demo/record.sh`](docs/demo/record.sh) re-records it.
+
 ## Status
 
 Early. The map, its cursor, shell nodes, note cards, the attach handoff, live previews, peek,
