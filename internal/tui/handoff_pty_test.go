@@ -99,6 +99,11 @@ type terminal struct {
 
 func openTerminal(t *testing.T) *terminal {
 	t.Helper()
+	// The handoff hands tmux the environment it was started with, and tmux
+	// refuses a TERM it has no terminfo for. A shell always has a real one; a
+	// CI runner has `dumb` or nothing, and the attach then never happens. This
+	// pty answers the queries an xterm answers, so saying so is the truth.
+	t.Setenv("TERM", "xterm-256color")
 	ptmx, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
 	if err != nil {
 		t.Skipf("no pty available: %v", err)
