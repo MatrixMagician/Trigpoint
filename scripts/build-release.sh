@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds the release artifacts: one static trig per supported platform, each in
-# its own tarball, with a SHA256SUMS file over the lot. The release workflow
+# Builds the release artifacts: a static trig in its own tarball, with a
+# SHA256SUMS file over it. The release workflow
 # runs this and uploads what it leaves in dist/; running it by hand produces the
 # same files, which is the point — a release nobody can reproduce locally is a
 # release nobody can check.
@@ -8,7 +8,9 @@
 #   usage: scripts/build-release.sh [version] [outdir]
 #
 # version defaults to the tag at HEAD, or to the short commit for an untagged
-# build. Linux only, and deliberately: see docs/adr/0019-v1-ships-linux-only.md.
+# build. linux/amd64 only, and deliberately: see
+# docs/adr/0019-v1-ships-linux-only.md and
+# docs/adr/0020-release-builds-are-linux-amd64-only.md.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -25,7 +27,7 @@ export CGO_ENABLED=0
 rm -rf "$outdir"
 mkdir -p "$outdir"
 
-for platform in linux/amd64 linux/arm64; do
+for platform in linux/amd64; do
 	os=${platform%/*}
 	arch=${platform#*/}
 	stage=$outdir/trig_${version}_${os}_${arch}
