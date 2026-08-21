@@ -63,6 +63,7 @@ func init() {
 		{name: "size", label: "Cycle card size", hint: "size", keys: "s", run: Model.cycleSize},
 		{name: "select", label: "Visual select", keys: "v", run: Model.toggleSelect},
 		{name: "group", label: "Group the selection", keys: "g", run: Model.group},
+		{name: "rename_group", label: "Rename the group under the cursor", keys: "R", run: renameGroupPrompt},
 		// The keys a held group answers are not in this table: they are one context
 		// down, and are listed in the overlay under heldKeys and on the status bar
 		// for as long as a group is held.
@@ -386,6 +387,18 @@ func quit(m Model) (tea.Model, tea.Cmd) {
 
 func renamePrompt(m Model) (tea.Model, tea.Cmd) {
 	return m.editAttr(modeRename, func(n state.Node) string { return n.Title })
+}
+
+// renameGroupPrompt is the group half of `r`. Which group it opens on is
+// decided by where the cursor is and nothing else, exactly as `g` decides
+// between creating and joining (ADR 0012).
+func renameGroupPrompt(m Model) (tea.Model, tea.Cmd) {
+	g, ok := m.ws.GroupAt(m.ws.Viewport.Cursor)
+	if !ok {
+		return m, nil
+	}
+	m.mode, m.editing, m.input = modeGroupRename, g.ID, g.Title
+	return m, nil
 }
 
 func tagsPrompt(m Model) (tea.Model, tea.Cmd) {

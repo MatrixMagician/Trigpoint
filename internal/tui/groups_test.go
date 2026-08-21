@@ -573,6 +573,10 @@ func TestRenamingAGroupRedrawsItsBorderAndItsMembersCards(t *testing.T) {
 	m := groupedMap(t, wholeRect)
 
 	m = pressKeys(t, m, "R")
+	// The prompt opens on the current title, so a rename types over it.
+	for range "infra" {
+		m, _ = press(t, m, tea.KeyBackspace)
+	}
 	m, _ = typeKeys(t, m, "platform")
 	m, _ = press(t, m, tea.KeyEnter)
 
@@ -615,7 +619,7 @@ func TestEscLeavesAGroupsNameAsItWas(t *testing.T) {
 	m := groupedMap(t, wholeRect)
 
 	m = pressKeys(t, m, "R")
-	m, _ = typeKeys(t, m, "platform")
+	m, _ = typeKeys(t, m, "-platform")
 	m, _ = press(t, m, tea.KeyEsc)
 
 	if m.mode != modeNormal {
