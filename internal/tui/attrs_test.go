@@ -330,7 +330,7 @@ func TestCardSizeDecidesHowMuchIsCaptured(t *testing.T) {
 		ws := oneNode()
 		ws.Nodes[0].Size = tc.size
 		m, sessions, _ := newNodeModel(t, ws)
-		m = run(t, m, captureDueMsg{})
+		run(t, m, captureDueMsg{})
 
 		if len(sessions.captured) != 1 {
 			t.Fatalf("size %q: expected one capture, got %v", tc.size, sessions.captured)
@@ -350,7 +350,7 @@ func TestASmallCardCapturesNothing(t *testing.T) {
 
 	m = run(t, m, captureDueMsg{})
 	m = run(t, m, activity("k4f2"))
-	m = run(t, m, captureDueMsg{})
+	run(t, m, captureDueMsg{})
 
 	if len(sessions.captured) != 0 {
 		t.Errorf("a small card should never be captured, got %v", sessions.captured)

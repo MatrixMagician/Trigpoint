@@ -582,7 +582,7 @@ func TestACreateLandingOnAShovedCellFindsAnotherCell(t *testing.T) {
 	}}
 	m, _, _ := newNodeModel(t, ws)
 
-	m, cmd := typeKeys(t, m, "n")
+	m, _ = typeKeys(t, m, "n")
 	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
 

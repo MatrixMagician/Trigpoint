@@ -182,15 +182,13 @@ func save(path string, settings map[string]any) error {
 	if err != nil {
 		return fmt.Errorf("creating a temp file beside %s: %w", path, err)
 	}
-	defer os.Remove(tmp.Name()) // no-op once the rename has succeeded
+	defer func() { _ = os.Remove(tmp.Name()) }() // no-op once the rename has succeeded
 
 	if _, err := tmp.Write(append(raw, '\n')); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", path, err)
+		return errors.Join(fmt.Errorf("writing %s: %w", path, err), tmp.Close())
 	}
 	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return fmt.Errorf("setting the mode on %s: %w", path, err)
+		return errors.Join(fmt.Errorf("setting the mode on %s: %w", path, err), tmp.Close())
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("closing %s: %w", path, err)

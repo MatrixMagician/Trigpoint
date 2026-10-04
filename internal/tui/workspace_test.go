@@ -377,7 +377,11 @@ func TestASwitchThatCannotWriteStaysWhereItIs(t *testing.T) {
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 
 	stayed, _ := press(t, m, tea.KeyTab)
 

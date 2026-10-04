@@ -89,13 +89,13 @@ func editorSession(body string) (*exec.Cmd, func() (string, error), error) {
 	path := f.Name()
 	_, writeErr := f.WriteString(body)
 	if err := cmp.Or(writeErr, f.Close()); err != nil {
-		os.Remove(path)
+		_ = os.Remove(path)
 		return nil, nil, fmt.Errorf("writing the note out for $EDITOR: %w", err)
 	}
 
 	args := append(append([]string{}, editor[1:]...), path)
 	return exec.Command(editor[0], args...), func() (string, error) {
-		defer os.Remove(path)
+		defer func() { _ = os.Remove(path) }()
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			return "", fmt.Errorf("reading the note back from $EDITOR: %w", err)

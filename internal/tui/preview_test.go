@@ -62,7 +62,7 @@ func TestActivityMarksTheCardDirtyRatherThanCapturingOnEveryEvent(t *testing.T) 
 		t.Fatalf("an activity event should not capture on its own, got %v", sessions.captured)
 	}
 
-	m = run(t, m, captureDueMsg{})
+	run(t, m, captureDueMsg{})
 	if len(sessions.captured) != 1 || sessions.captured[0].session != tmux.SessionName("main", "aaa") {
 		t.Errorf("five events should have coalesced into one capture, got %v", sessions.captured)
 	}
@@ -74,7 +74,7 @@ func TestCapturesAreBatchedIntoOneTick(t *testing.T) {
 	m = update(t, m, activity("aaa"))
 	m = update(t, m, activity("bbb"))
 	m = update(t, m, activity("aaa"))
-	m = run(t, m, captureDueMsg{})
+	run(t, m, captureDueMsg{})
 
 	if len(sessions.captured) != 2 {
 		t.Errorf("two cards moved, so one tick should capture twice, got %v", sessions.captured)
@@ -90,7 +90,7 @@ func TestOnlyCardsInTheViewportAreCaptured(t *testing.T) {
 
 	m = update(t, m, activity("aaa"))
 	m = update(t, m, activity("far"))
-	m = run(t, m, captureDueMsg{})
+	run(t, m, captureDueMsg{})
 
 	for _, c := range sessions.captured {
 		if c.session == tmux.SessionName("main", "far") {
@@ -108,7 +108,7 @@ func TestTheSlowTickRefreshesWithNoEventToPromptIt(t *testing.T) {
 	// Nothing has been heard from tmux at all — this is the fallback that
 	// catches whatever the event stream missed, or never delivered.
 	m = update(t, m, refreshTickMsg{})
-	m = run(t, m, captureDueMsg{})
+	run(t, m, captureDueMsg{})
 
 	if len(sessions.captured) != 2 {
 		t.Errorf("the slow tick should refresh every visible card, got %v", sessions.captured)
@@ -127,7 +127,7 @@ func TestReturningFromAttachRefreshesImmediately(t *testing.T) {
 
 	// The terminal has been out at a session; whatever happened there is not on
 	// the card, and waiting a debounce to find out is a visible stale flash.
-	m = run(t, m, attachedMsg{})
+	run(t, m, attachedMsg{})
 
 	if len(sessions.captured) != 2 {
 		t.Errorf("returning from an attach should capture at once, got %v", sessions.captured)
@@ -160,7 +160,7 @@ func TestAnEventForANodeThatIsNotOnTheMapIsIgnored(t *testing.T) {
 	// Another workspace's node, or one adopted into a map this process is not
 	// looking at. Nothing here has a card to mark stale.
 	m = update(t, m, tmuxEventMsg{ev: tmux.Event{Kind: tmux.Activity, Session: tmux.SessionName("other", "zzz")}})
-	m = run(t, m, captureDueMsg{})
+	run(t, m, captureDueMsg{})
 
 	if len(sessions.captured) != 0 {
 		t.Errorf("a session with no card should capture nothing, got %v", sessions.captured)
@@ -334,7 +334,7 @@ func TestMovingTheCursorWithinTheViewportCapturesNothing(t *testing.T) {
 	// Both cards are already on screen and already captured. Moving between
 	// them is not news about either session.
 	m = update(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	m = run(t, m, captureDueMsg{})
+	run(t, m, captureDueMsg{})
 
 	if len(sessions.captured) != 0 {
 		t.Errorf("navigating a captured viewport should ask tmux nothing, got %v", sessions.captured)

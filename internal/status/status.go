@@ -115,11 +115,10 @@ func Write(path string, state State, detail string) error {
 	if err != nil {
 		return fmt.Errorf("creating a temp file for the status report: %w", err)
 	}
-	defer os.Remove(tmp.Name()) // no-op once the rename has succeeded
+	defer func() { _ = os.Remove(tmp.Name()) }() // no-op once the rename has succeeded
 
 	if _, err := tmp.Write(append(raw, '\n')); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing the status report: %w", err)
+		return errors.Join(fmt.Errorf("writing the status report: %w", err), tmp.Close())
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("closing the status report: %w", err)

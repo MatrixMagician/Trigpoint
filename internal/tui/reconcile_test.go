@@ -466,7 +466,7 @@ func TestAReconstructedNodeSurvivesARestart(t *testing.T) {
 	m, sessions, stateDir := newNodeModel(t, state.Workspace{Name: "main"})
 	sessions.live = []string{tmux.SessionName("main", "zzz")}
 
-	m = reconciled(t, m)
+	reconciled(t, m)
 
 	saved, err := state.Load(stateDir, "main")
 	if err != nil {
@@ -527,7 +527,7 @@ func TestADeadNodeIsNotCaptured(t *testing.T) {
 	sessions.captured = nil
 
 	m = update(t, m, refreshTickMsg{})
-	m = run(t, m, captureDueMsg{})
+	run(t, m, captureDueMsg{})
 
 	for _, c := range sessions.captured {
 		if c.session == tmux.SessionName("main", "bbb") {

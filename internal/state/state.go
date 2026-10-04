@@ -222,11 +222,10 @@ func Save(dir string, ws Workspace) error {
 	if err != nil {
 		return fmt.Errorf("creating temp file for workspace %q: %w", ws.Name, err)
 	}
-	defer os.Remove(tmp.Name()) // no-op once the rename has succeeded
+	defer func() { _ = os.Remove(tmp.Name()) }() // no-op once the rename has succeeded
 
 	if err := writeAndSync(tmp, raw); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing workspace %q: %w", ws.Name, err)
+		return errors.Join(fmt.Errorf("writing workspace %q: %w", ws.Name, err), tmp.Close())
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("closing temp file for workspace %q: %w", ws.Name, err)
@@ -291,7 +290,7 @@ func syncDir(dir string) error {
 	if err != nil {
 		return fmt.Errorf("opening state directory to flush it: %w", err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	if err := d.Sync(); err != nil {
 		return fmt.Errorf("flushing state directory: %w", err)
 	}
