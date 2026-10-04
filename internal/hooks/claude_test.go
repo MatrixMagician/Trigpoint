@@ -2,6 +2,8 @@ package hooks
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -273,7 +275,9 @@ func TestTheNotificationHookIgnoresAnIdlePrompt(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			os.Remove(statusFile)
+			if err := os.Remove(statusFile); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				t.Fatal(err)
+			}
 			cmd := exec.Command("sh", "-c", command)
 			cmd.Stdin = strings.NewReader(c.payload)
 			// The stub first, then the real PATH: the hook uses grep, and a

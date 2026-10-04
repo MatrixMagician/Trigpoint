@@ -128,11 +128,6 @@ func (m Model) updateAdopt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) closeAdoption() Model {
-	m.mode, m.candidates, m.choice = modeNormal, nil, 0
-	return m
-}
-
 // adopt puts a foreign session on the map. There is no tmux call in here at
 // all: the session is already running, adoption renames nothing, and the whole
 // operation is a card appearing over something that was already there.

@@ -199,7 +199,10 @@ func checkWritable(dir string) error {
 		return fmt.Errorf("cannot write to %s: %w", dir, err)
 	}
 	name := probe.Name()
-	probe.Close()
+	if err := probe.Close(); err != nil {
+		_ = os.Remove(name)
+		return fmt.Errorf("cannot write to %s: %w", dir, err)
+	}
 	if err := os.Remove(name); err != nil {
 		return fmt.Errorf("cannot remove files in %s: %w", filepath.Dir(name), err)
 	}

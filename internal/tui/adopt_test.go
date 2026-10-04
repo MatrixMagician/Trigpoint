@@ -212,7 +212,7 @@ func TestEscLeavesTheAdoptionPickerWithoutAdopting(t *testing.T) {
 func TestAnAdoptedNodeAttachesToItsOwnSession(t *testing.T) {
 	m, sessions := adoptedMap(t)
 
-	m, _ = press(t, m, tea.KeyEnter)
+	press(t, m, tea.KeyEnter)
 
 	if len(sessions.handoffs) != 1 || sessions.handoffs[0].session != foreign {
 		t.Errorf("attach should hand the terminal to the foreign session, got %v", sessions.handoffs)
@@ -222,7 +222,7 @@ func TestAnAdoptedNodeAttachesToItsOwnSession(t *testing.T) {
 func TestAnAdoptedNodeIsPreviewedFromItsOwnSession(t *testing.T) {
 	m, sessions := adoptedMap(t)
 
-	m = run(t, m, captureDueMsg{})
+	run(t, m, captureDueMsg{})
 
 	if len(sessions.captured) != 1 || sessions.captured[0].session != foreign {
 		t.Errorf("the preview is captured from the foreign session, got %v", sessions.captured)
