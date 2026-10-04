@@ -249,8 +249,14 @@ func TestTheDetachKeyReturnsFromANestedAttach(t *testing.T) {
 		t.Fatalf("Handoff: %v", err)
 	}
 	// The pane's own TMUX is what tmux would refuse the nesting over, so the
-	// child is run with exactly the environment Handoff prepared.
-	line := "env -u TMUX -u TMUX_PANE " + strings.Join(attach.Args, " ")
+	// child is run with exactly the environment Handoff prepared. The pane runs
+	// the user's own shell, so every argument is quoted: zsh would otherwise
+	// read the target's leading "=" as a command-path lookup and never run tmux.
+	quoted := make([]string, len(attach.Args))
+	for i, a := range attach.Args {
+		quoted[i] = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+	}
+	line := "env -u TMUX -u TMUX_PANE " + strings.Join(quoted, " ")
 	if err := exec.Command("tmux", "-L", c.Socket, "send-keys", "-t", "outer", line, "Enter").Run(); err != nil {
 		t.Fatalf("send-keys: %v", err)
 	}
