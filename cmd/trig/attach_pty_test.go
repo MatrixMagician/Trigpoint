@@ -91,7 +91,7 @@ func answerAsATerminal(ptmx *os.File) {
 			drawn := string(buf[:n])
 			for _, r := range replies {
 				for range strings.Count(drawn, r.query) {
-					ptmx.WriteString(r.answer)
+					_, _ = ptmx.WriteString(r.answer)
 				}
 			}
 		}
@@ -123,7 +123,7 @@ func openPty(t *testing.T) (ptmx, pts *os.File) {
 	if err := unix.IoctlSetWinsize(int(ptmx.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 30, Col: 120}); err != nil {
 		t.Fatalf("sizing the pty: %v", err)
 	}
-	t.Cleanup(func() { pts.Close(); ptmx.Close() })
+	t.Cleanup(func() { _ = pts.Close(); _ = ptmx.Close() })
 	return ptmx, pts
 }
 

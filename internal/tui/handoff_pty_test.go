@@ -123,7 +123,7 @@ func openTerminal(t *testing.T) *terminal {
 		t.Fatalf("sizing the pty: %v", err)
 	}
 	term := &terminal{ptmx: ptmx, pts: pts}
-	t.Cleanup(func() { pts.Close(); ptmx.Close() })
+	t.Cleanup(func() { _ = pts.Close(); _ = ptmx.Close() })
 	go term.answer()
 	return term
 }
@@ -146,7 +146,7 @@ func (term *terminal) answer() {
 			term.mu.Unlock()
 			for _, r := range replies {
 				for range strings.Count(drawn, r.query) {
-					term.ptmx.WriteString(r.answer)
+					_, _ = term.ptmx.WriteString(r.answer)
 				}
 			}
 		}
@@ -156,7 +156,7 @@ func (term *terminal) answer() {
 	}
 }
 
-func (term *terminal) type_(keys string) { term.ptmx.WriteString(keys) }
+func (term *terminal) type_(keys string) { _, _ = term.ptmx.WriteString(keys) }
 
 // plainText drops the escape sequences, leaving what is actually on the screen.
 func plainText(s string) string {

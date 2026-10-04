@@ -323,10 +323,10 @@ func (m Model) updateHeld(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	looking := m.ws.Viewport.Offset
 	m.status = ""
 	key := msg.String()
-	switch {
-	case key == "V" || key == "esc":
+	switch key {
+	case "V", "esc":
 		return m.release(), nil
-	case key == "x":
+	case "x":
 		// No confirmation: deleting a group kills nothing. The nodes inside it
 		// stay exactly where they are and simply stop being in anything.
 		return m.deleteGroup(), nil

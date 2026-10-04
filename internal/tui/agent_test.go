@@ -214,7 +214,7 @@ func TestARespawnRerunsTheStoredCommand(t *testing.T) {
 
 	m, _ = press(t, m, tea.KeyEnter) // offers the respawn
 	m, cmd := typeKeys(t, m, "y")
-	m = settle(t, m, cmd)
+	settle(t, m, cmd)
 
 	if len(sessions.created) != 1 {
 		t.Fatalf("expected one tmux session, got %+v", sessions.created)

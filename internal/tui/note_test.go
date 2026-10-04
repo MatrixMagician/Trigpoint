@@ -39,8 +39,8 @@ func TestNCreatesANoteNodeWithNoSession(t *testing.T) {
 	m, sessions, dir := newNodeModel(t, state.Workspace{Name: "main"})
 
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
-	m, cmd := typeKeys(t, next.(Model), "todo")
-	m, cmd = press(t, m, tea.KeyEnter)
+	m, _ = typeKeys(t, next.(Model), "todo")
+	m, cmd := press(t, m, tea.KeyEnter)
 	m = settle(t, m, cmd)
 
 	if len(m.ws.Nodes) != 1 {
